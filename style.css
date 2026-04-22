@@ -241,6 +241,7 @@ button {
 .numbers-op-slot {
   -webkit-user-select: none;
   user-select: none;
+  touch-action: none;
 }
 
 .numbers-tile {
@@ -583,4 +584,33 @@ button {
   border-color: var(--blue-border);
   background: var(--blue-soft);
   box-shadow: var(--blue-glow);
+}
+
+
+.numbers-modes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.numbers-mode-button {
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.numbers-mode-button.active {
+  background: var(--blue-soft);
+  border-color: var(--blue-border);
+}
+
+.numbers-start {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  font-weight: 900;
 }

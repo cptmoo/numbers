@@ -3,34 +3,37 @@ const { createApp } = Vue;
 createApp({
   data() {
     return {
-      menuOpen: false,
-      activeModeId: "daily-certain",
-      timerSeconds: 30,
+      activeModeId: "daily",
+      timerSeconds: 0,
       timerId: null,
       target: 124,
       seedLabel: "",
+      gameState: "pregame", // 'pregame' | 'playing' | 'finished'
 
       startTiles: [],
       startTileIdCounter: 0,
-
       lines: [],
       selectedItem: null, // { kind:'tile'|'op', source:'start'|'result'|'placed', tileId?, op?, fromLineIndex?, fromSlotKey? }
 
       bestValue: null,
       bestGap: null,
 
-      message: "Select a number or operation",
+      message: "Pick a mode to start",
 
       dragState: {
         active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
         payload: null,
       },
+      suppressClickUntil: 0,
 
       modes: [
-        { id: "daily-certain", title: "Daily", subtitle: "Certain game", type: "certain", daily: true, duration: 0 },
-        { id: "daily-traditional", title: "Daily traditional", subtitle: "Closest wins", type: "traditional", daily: true, duration: 0 },
-        { id: "certain-2", title: "2 min certain", subtitle: "Exact target", type: "certain", daily: false, duration: 120 },
-        { id: "traditional-2", title: "2 min traditional", subtitle: "Closest wins", type: "traditional", daily: false, duration: 120 },
+        { id: "daily", title: "Daily", type: "daily", duration: 0 },
+        { id: "family", title: "5 min Family", type: "family", duration: 300 },
+        { id: "class", title: "5 min Class", type: "class", duration: 300 },
+        { id: "weird", title: "5 min Weird", type: "weird", duration: 300 },
       ],
 
       ops: [
@@ -79,22 +82,45 @@ createApp({
   },
 
   mounted() {
-    this.startMode(this.activeModeId);
+    this.selectMode(this.activeModeId);
+    window.addEventListener("pointermove", this.onGlobalPointerMove);
     window.addEventListener("pointerup", this.onGlobalPointerUp);
-    window.addEventListener("pointercancel", this.onGlobalPointerUp);
+    window.addEventListener("pointercancel", this.onGlobalPointerCancel);
   },
 
   beforeUnmount() {
     this.stopTimer();
+    window.removeEventListener("pointermove", this.onGlobalPointerMove);
     window.removeEventListener("pointerup", this.onGlobalPointerUp);
-    window.removeEventListener("pointercancel", this.onGlobalPointerUp);
+    window.removeEventListener("pointercancel", this.onGlobalPointerCancel);
   },
 
   methods: {
+    selectMode(modeId) {
+      this.activeModeId = modeId;
+      this.gameState = "pregame";
+      this.stopTimer();
+      this.timerSeconds = 0;
+      this.target = 0;
+      this.seedLabel = "";
+      this.startTiles = [];
+      this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
+      this.selectedItem = null;
+      this.bestValue = null;
+      this.bestGap = null;
+      this.message = "Pick a mode to start";
+      this.dragState = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        payload: null,
+      };
+    },
+
     startMode(modeId) {
-      const mode = this.modes.find((m) => m.id === modeId) || this.modes[0];
-      this.activeModeId = mode.id;
-      this.menuOpen = false;
+      this.activeModeId = modeId;
+      this.gameState = "playing";
       this.newBoard();
     },
 
@@ -103,7 +129,13 @@ createApp({
       this.selectedItem = null;
       this.bestValue = null;
       this.bestGap = null;
-      this.dragState = { active: false, payload: null };
+      this.dragState = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        payload: null,
+      };
 
       const puzzle = this.generatePuzzle(this.activeMode);
       this.target = puzzle.target;
@@ -117,7 +149,7 @@ createApp({
 
       this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
 
-      if (this.activeMode.duration > 0) {
+      if (this.activeMode.duration > 0 && this.gameState === "playing") {
         this.timerSeconds = this.activeMode.duration;
         this.startTimer();
       } else {
@@ -142,6 +174,7 @@ createApp({
           this.timerSeconds = 0;
           this.stopTimer();
           this.message = "Time";
+          this.gameState = "finished";
           return;
         }
         this.timerSeconds -= 1;
@@ -166,6 +199,16 @@ createApp({
 
     resultLineIndexFromId(tileId) {
       return Number(String(tileId).replace("result-", ""));
+    },
+
+    currentSelection() {
+      return this.dragState.active && this.dragState.payload
+        ? this.dragState.payload
+        : this.selectedItem;
+    },
+
+    shouldIgnoreClick() {
+      return Date.now() < this.suppressClickUntil;
     },
 
     sameTileRef(a, b) {
@@ -276,11 +319,11 @@ createApp({
     },
 
     clearOriginIfPlaced(sel = this.selectedItem) {
-      if (!sel || sel.kind !== "tile") return;
-      if (sel.source === "placed") {
+      if (!sel) return;
+      if (sel.kind === "tile" && sel.source === "placed") {
         this.lines[sel.fromLineIndex][sel.fromSlotKey] = null;
       }
-      if (sel.source === "placed_op") {
+      if (sel.kind === "op" && sel.source === "placed_op") {
         this.lines[sel.fromLineIndex].op = null;
       }
     },
@@ -315,6 +358,8 @@ createApp({
     },
 
     selectStartTile(tileId) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       if (this.isSelectedStartTile(tileId)) {
         this.selectedItem = null;
         this.message = "Select a number or operation";
@@ -326,6 +371,8 @@ createApp({
     },
 
     selectResultTile(lineIndex) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       if (!this.lineHasResult(lineIndex)) return;
       if (this.isSelectedResultTile(lineIndex)) {
         this.selectedItem = null;
@@ -338,6 +385,8 @@ createApp({
     },
 
     selectPlacedTile(lineIndex, slotKey) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       const ref = this.lines[lineIndex][slotKey];
       if (!ref) return;
 
@@ -357,6 +406,8 @@ createApp({
     },
 
     selectOp(opValue) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       if (this.isSelectedOp(opValue)) {
         this.selectedItem = null;
         this.message = "Select a number or operation";
@@ -367,6 +418,8 @@ createApp({
     },
 
     selectPlacedOp(lineIndex) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       if (!this.lines[lineIndex].op) return;
 
       if (this.isSelectedPlacedOp(lineIndex)) {
@@ -385,25 +438,26 @@ createApp({
     },
 
     slotCanAccept(lineIndex, slotKey) {
-      if (!this.selectedItem || this.selectedItem.kind !== "tile") return false;
+      const selection = this.currentSelection();
+      if (!selection || selection.kind !== "tile") return false;
       if (!(slotKey === "aRef" || slotKey === "bRef")) return false;
 
       const line = this.lines[lineIndex];
       const targetFilled = line[slotKey] != null;
 
-      if (this.selectedItem.source === "start") {
+      if (selection.source === "start") {
         return this.isNextLine(lineIndex) || targetFilled;
       }
 
-      if (this.selectedItem.source === "result") {
-        const sourceLine = this.resultLineIndexFromId(this.selectedItem.tileId);
+      if (selection.source === "result") {
+        const sourceLine = this.resultLineIndexFromId(selection.tileId);
         return this.isNextLine(lineIndex) || (lineIndex > sourceLine && targetFilled);
       }
 
-      if (this.selectedItem.source === "placed") {
-        if (this.selectedItem.fromLineIndex === lineIndex && this.selectedItem.fromSlotKey === slotKey) return false;
+      if (selection.source === "placed") {
+        if (selection.fromLineIndex === lineIndex && selection.fromSlotKey === slotKey) return false;
 
-        const movingRef = this.makeTileRefFromSelection(this.selectedItem);
+        const movingRef = this.makeTileRefFromSelection(selection);
         if (!movingRef) return false;
 
         if (movingRef.source === "start") {
@@ -420,10 +474,11 @@ createApp({
     },
 
     opSlotCanAccept(lineIndex) {
-      if (!this.selectedItem || this.selectedItem.kind !== "op") return false;
+      const selection = this.currentSelection();
+      if (!selection || selection.kind !== "op") return false;
 
-      if (this.selectedItem.source === "placed_op") {
-        if (this.selectedItem.fromLineIndex === lineIndex) return false;
+      if (selection.source === "placed_op" && selection.fromLineIndex === lineIndex) {
+        return false;
       }
 
       const line = this.lines[lineIndex];
@@ -431,25 +486,30 @@ createApp({
     },
 
     bankCanAcceptPlacedTile(tileId) {
-      if (!this.selectedItem || this.selectedItem.kind !== "tile") return false;
-      if (this.selectedItem.source !== "placed") return false;
+      const selection = this.currentSelection();
+      if (!selection || selection.kind !== "tile") return false;
+      if (selection.source !== "placed") return false;
 
-      const movingRef = this.makeTileRefFromSelection(this.selectedItem);
+      const movingRef = this.makeTileRefFromSelection(selection);
       return movingRef?.source === "start" && movingRef.id === tileId;
     },
 
     placeIntoTileSlot(lineIndex, slotKey) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       if (!this.slotCanAccept(lineIndex, slotKey)) return;
 
       const incomingRef = this.makeTileRefFromSelection(this.selectedItem);
       if (!incomingRef) return;
 
       const replaced = this.lines[lineIndex][slotKey];
-      this.clearOriginIfPlaced(this.selectedItem);
+      const originSelection = this.selectedItem;
+
+      this.clearOriginIfPlaced(originSelection);
       this.lines[lineIndex][slotKey] = incomingRef;
 
-      if (this.selectedItem?.source === "placed" && replaced) {
-        this.lines[this.selectedItem.fromLineIndex][this.selectedItem.fromSlotKey] = replaced;
+      if (originSelection?.source === "placed" && replaced) {
+        this.lines[originSelection.fromLineIndex][originSelection.fromSlotKey] = replaced;
       }
 
       this.selectedItem = null;
@@ -458,16 +518,19 @@ createApp({
     },
 
     placeIntoOpSlot(lineIndex) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       if (!this.opSlotCanAccept(lineIndex)) return;
 
       const incomingOp = this.selectedItem.op;
       const replaced = this.lines[lineIndex].op;
+      const originSelection = this.selectedItem;
 
-      this.clearOriginIfPlaced(this.selectedItem);
+      this.clearOriginIfPlaced(originSelection);
       this.lines[lineIndex].op = incomingOp;
 
-      if (this.selectedItem?.source === "placed_op" && replaced) {
-        this.lines[this.selectedItem.fromLineIndex].op = replaced;
+      if (originSelection?.source === "placed_op" && replaced) {
+        this.lines[originSelection.fromLineIndex].op = replaced;
       }
 
       this.selectedItem = null;
@@ -476,6 +539,8 @@ createApp({
     },
 
     returnPlacedTileToBank(tileId) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
       if (!this.bankCanAcceptPlacedTile(tileId)) return;
       this.clearOriginIfPlaced(this.selectedItem);
       this.selectedItem = null;
@@ -484,6 +549,7 @@ createApp({
     },
 
     clearAllWorking() {
+      if (this.gameState !== "playing") return;
       this.selectedItem = null;
       this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
       this.bestValue = null;
@@ -492,6 +558,7 @@ createApp({
     },
 
     restoreBest() {
+      if (this.gameState !== "playing") return;
       if (this.bestValue == null) return;
 
       for (const tile of this.startTiles) {
@@ -544,43 +611,112 @@ createApp({
       return { valid: false, ready: false, value: null };
     },
 
-    onDragStartTile(tileId) {
+    beginPointerDrag(payload, event) {
+      if (this.gameState !== "playing") return;
+      this.dragState = {
+        active: false,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        payload,
+      };
+    },
+
+    onDragStartTile(tileId, event) {
       if (this.isStartTileUsed(tileId)) return;
-      this.selectedItem = { kind: "tile", source: "start", tileId };
-      this.dragState = { active: true, payload: this.selectedItem };
+      this.beginPointerDrag({ kind: "tile", source: "start", tileId }, event);
     },
 
-    onDragStartResult(lineIndex) {
+    onDragStartResult(lineIndex, event) {
       if (!this.lineHasResult(lineIndex) || this.isResultTileUsed(lineIndex)) return;
-      this.selectedItem = { kind: "tile", source: "result", tileId: this.resultTileIdForLine(lineIndex) };
-      this.dragState = { active: true, payload: this.selectedItem };
+      this.beginPointerDrag({ kind: "tile", source: "result", tileId: this.resultTileIdForLine(lineIndex) }, event);
     },
 
-    onDragStartPlacedTile(lineIndex, slotKey) {
+    onDragStartPlacedTile(lineIndex, slotKey, event) {
       const ref = this.lines[lineIndex][slotKey];
       if (!ref) return;
-      this.selectedItem = { kind: "tile", source: "placed", fromLineIndex: lineIndex, fromSlotKey: slotKey };
-      this.dragState = { active: true, payload: this.selectedItem };
+      this.beginPointerDrag({ kind: "tile", source: "placed", fromLineIndex: lineIndex, fromSlotKey: slotKey }, event);
     },
 
-    onDragStartOp(opValue) {
-      this.selectedItem = { kind: "op", op: opValue };
-      this.dragState = { active: true, payload: this.selectedItem };
+    onDragStartOp(opValue, event) {
+      this.beginPointerDrag({ kind: "op", op: opValue }, event);
     },
 
-    onDragStartPlacedOp(lineIndex) {
+    onDragStartPlacedOp(lineIndex, event) {
       if (!this.lines[lineIndex].op) return;
-      this.selectedItem = { kind: "op", source: "placed_op", fromLineIndex: lineIndex, op: this.lines[lineIndex].op };
-      this.dragState = { active: true, payload: this.selectedItem };
+      this.beginPointerDrag({ kind: "op", source: "placed_op", fromLineIndex: lineIndex, op: this.lines[lineIndex].op }, event);
     },
 
-    onGlobalPointerUp() {
-      this.dragState = { active: false, payload: null };
+    onGlobalPointerMove(event) {
+      if (this.dragState.pointerId !== event.pointerId || !this.dragState.payload) return;
+
+      if (!this.dragState.active) {
+        const dx = event.clientX - this.dragState.startX;
+        const dy = event.clientY - this.dragState.startY;
+        if ((dx * dx) + (dy * dy) < 64) return;
+
+        this.dragState.active = true;
+        this.selectedItem = this.dragState.payload;
+        this.message = this.dragState.payload.kind === "tile"
+          ? "Release on a blue space"
+          : "Release on an operator space";
+      }
+    },
+
+    finishPointerDrag() {
+      this.dragState = {
+        active: false,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        payload: null,
+      };
+    },
+
+    handleDropTarget(target) {
+      if (!target || !this.dragState.active || !this.dragState.payload) return false;
+
+      const dropKind = target.dataset.dropKind;
+      if (dropKind === "tile-slot") {
+        this.placeIntoTileSlot(Number(target.dataset.lineIndex), target.dataset.slotKey);
+        return true;
+      }
+      if (dropKind === "op-slot") {
+        this.placeIntoOpSlot(Number(target.dataset.lineIndex));
+        return true;
+      }
+      if (dropKind === "bank-tile") {
+        this.returnPlacedTileToBank(target.dataset.tileId);
+        return true;
+      }
+      return false;
+    },
+
+    onGlobalPointerUp(event) {
+      if (this.dragState.pointerId !== event.pointerId) return;
+
+      const wasDragging = this.dragState.active;
+      if (wasDragging) {
+        const el = document.elementFromPoint(event.clientX, event.clientY);
+        const dropTarget = el ? el.closest("[data-drop-kind]") : null;
+        this.handleDropTarget(dropTarget);
+        this.suppressClickUntil = Date.now() + 80;
+      }
+
+      this.finishPointerDrag();
+      if (wasDragging && !this.selectedItem) {
+        this.message = "Select a number or operation";
+      }
+    },
+
+    onGlobalPointerCancel(event) {
+      if (this.dragState.pointerId !== event.pointerId) return;
+      this.finishPointerDrag();
     },
 
     generatePuzzle(mode) {
       const now = new Date();
-      const slot = mode.daily ? this.localDateStamp(now) : this.utcSlotStamp(now, mode.duration || 120);
+      const slot = mode.daily ? this.localDateStamp(now) : this.utcSlotStamp(now, mode.duration || 300);
       const seedString = `numbers|${mode.id}|${slot}`;
       const rand = this.mulberry32(this.fnv1a32(seedString));
 
@@ -661,15 +797,13 @@ createApp({
       <div class="numbers-shell">
         <section class="numbers-top">
           <div class="numbers-top-row">
-            <button class="numbers-menu" type="button" @click="menuOpen = true" aria-label="Menu">
-              <span class="numbers-burger" aria-hidden="true">
-                <span></span><span></span><span></span>
-              </span>
-            </button>
-
             <div class="numbers-brand">
               <div class="numbers-title">Numbers</div>
-              <div class="numbers-sub">{{ activeMode.title }} · {{ seedLabel }}</div>
+              <div class="numbers-sub">
+                {{ gameState === 'pregame'
+                  ? 'Pick game mode'
+                  : activeMode.title + ' · ' + seedLabel }}
+              </div>
             </div>
 
             <div class="numbers-pill">
@@ -682,187 +816,254 @@ createApp({
               <div class="numbers-pill-value">{{ bestValue == null ? "—" : bestValue }}</div>
             </div>
           </div>
+
+          <div class="numbers-modes">
+            <button
+              v-for="mode in modes"
+              :key="mode.id"
+              class="numbers-mode-button"
+              :class="{ active: mode.id === activeModeId }"
+              type="button"
+              @click="selectMode(mode.id)"
+            >
+              {{ mode.title }}
+            </button>
+          </div>
         </section>
 
         <section class="numbers-board">
-          <div class="numbers-status">
-            <div class="numbers-target">
-              <div class="numbers-label">Target</div>
-              <div class="numbers-target-value">{{ target }}</div>
+          <template v-if="gameState === 'pregame'">
+            <div class="numbers-status">
+              <div class="numbers-target">
+                <div class="numbers-label">Target</div>
+                <div class="numbers-target-value">—</div>
+              </div>
+
+              <div class="numbers-message">
+                <div class="numbers-label">Now</div>
+                <div class="numbers-message-text">Pick a mode to start</div>
+              </div>
             </div>
 
-            <div class="numbers-message">
-              <div class="numbers-label">Now</div>
-              <div class="numbers-message-text">{{ message }}</div>
-            </div>
-          </div>
+            <div class="numbers-bank">
+              <div class="numbers-bank-head">
+                <div class="numbers-label">Numbers</div>
+                <div class="numbers-label">0 live</div>
+              </div>
 
-          <div class="numbers-bank">
-            <div class="numbers-bank-head">
-              <div class="numbers-label">Numbers</div>
-              <div class="numbers-label">{{ liveCount }} live</div>
-            </div>
-
-            <div class="numbers-bank-grid">
-              <button
-                v-for="tile in startTiles"
-                :key="tile.id"
-                class="numbers-tile"
-                :class="{
-                  'is-used': isStartTileUsed(tile.id),
-                  'is-selected': isSelectedStartTile(tile.id),
-                  'is-valid-drop': bankCanAcceptPlacedTile(tile.id),
-                  'is-original': true
-                }"
-                type="button"
-                @click="bankCanAcceptPlacedTile(tile.id) ? returnPlacedTileToBank(tile.id) : selectStartTile(tile.id)"
-                @pointerdown="onDragStartTile(tile.id)"
-              >
-                <div class="numbers-tile-value">{{ tile.value }}</div>
-              </button>
-            </div>
-          </div>
-
-          <div class="numbers-work-area">
-            <div class="numbers-lines">
-              <div
-                v-for="(line, lineIndex) in lines"
-                :key="lineIndex"
-                class="numbers-line"
-              >
+              <div class="numbers-bank-grid">
                 <button
-                  class="numbers-slot-button"
-                  :class="[
-                    lineDisplayClass(lineIndex, 'aRef'),
-                    {
-                      'is-empty': lineDisplayValue(lineIndex, 'aRef') === '',
-                      'is-filled': lineDisplayValue(lineIndex, 'aRef') !== '',
-                      'is-valid-drop': slotCanAccept(lineIndex, 'aRef'),
-                      'is-selected': isSelectedPlacedTile(lineIndex, 'aRef')
-                    }
-                  ]"
+                  v-for="n in 6"
+                  :key="'pregame-bank-' + n"
+                  class="numbers-tile"
                   type="button"
-                  @click="line.aRef ? selectPlacedTile(lineIndex, 'aRef') : placeIntoTileSlot(lineIndex, 'aRef')"
-                  @pointerup="slotCanAccept(lineIndex, 'aRef') ? placeIntoTileSlot(lineIndex, 'aRef') : null"
-                  @pointerdown="line.aRef ? onDragStartPlacedTile(lineIndex, 'aRef') : null"
+                  disabled
                 >
-                  <span v-if="lineDisplayValue(lineIndex, 'aRef') !== ''" class="numbers-slot-big">
-                    {{ lineDisplayValue(lineIndex, 'aRef') }}
-                  </span>
-                </button>
-
-                <button
-                  class="numbers-op-slot"
-                  :class="{
-                    'is-empty': !line.op,
-                    'is-filled': !!line.op,
-                    'is-valid-drop': opSlotCanAccept(lineIndex),
-                    'is-selected': isSelectedPlacedOp(lineIndex)
-                  }"
-                  type="button"
-                  @click="line.op ? selectPlacedOp(lineIndex) : placeIntoOpSlot(lineIndex)"
-                  @pointerup="opSlotCanAccept(lineIndex) ? placeIntoOpSlot(lineIndex) : null"
-                  @pointerdown="line.op ? onDragStartPlacedOp(lineIndex) : null"
-                >
-                  <span v-if="line.op" class="numbers-op-big">
-                    {{ line.op === '*' ? '×' : line.op === '/' ? '÷' : line.op === '-' ? '−' : '+' }}
-                  </span>
-                </button>
-
-                <button
-                  class="numbers-slot-button"
-                  :class="[
-                    lineDisplayClass(lineIndex, 'bRef'),
-                    {
-                      'is-empty': lineDisplayValue(lineIndex, 'bRef') === '',
-                      'is-filled': lineDisplayValue(lineIndex, 'bRef') !== '',
-                      'is-valid-drop': slotCanAccept(lineIndex, 'bRef'),
-                      'is-selected': isSelectedPlacedTile(lineIndex, 'bRef')
-                    }
-                  ]"
-                  type="button"
-                  @click="line.bRef ? selectPlacedTile(lineIndex, 'bRef') : placeIntoTileSlot(lineIndex, 'bRef')"
-                  @pointerup="slotCanAccept(lineIndex, 'bRef') ? placeIntoTileSlot(lineIndex, 'bRef') : null"
-                  @pointerdown="line.bRef ? onDragStartPlacedTile(lineIndex, 'bRef') : null"
-                >
-                  <span v-if="lineDisplayValue(lineIndex, 'bRef') !== ''" class="numbers-slot-big">
-                    {{ lineDisplayValue(lineIndex, 'bRef') }}
-                  </span>
-                </button>
-
-                <div class="numbers-equals">=</div>
-
-                <button
-                  class="numbers-slot-button is-result"
-                  :class="{
-                    'is-empty': !lineHasResult(lineIndex),
-                    'is-filled': lineHasResult(lineIndex),
-                    'is-used': lineHasResult(lineIndex) && isResultTileUsed(lineIndex),
-                    'is-selected': isSelectedResultTile(lineIndex),
-                    'is-derived': lineHasResult(lineIndex),
-                    'is-invalid': resultIsInvalid(lineIndex)
-                  }"
-                  type="button"
-                  @click="selectResultTile(lineIndex)"
-                  @pointerdown="lineHasResult(lineIndex) ? onDragStartResult(lineIndex) : null"
-                >
-                  <span v-if="lineComputedResult(lineIndex).valid" class="numbers-slot-big">
-                    {{ lineComputedResult(lineIndex).value }}
-                  </span>
+                  <div class="numbers-tile-value">&nbsp;</div>
                 </button>
               </div>
             </div>
 
-            <div class="numbers-ops-column">
-              <button
-                v-for="op in ops"
-                :key="op.value"
-                class="numbers-op-button"
-                :class="{ 'is-selected': isSelectedOp(op.value) }"
-                type="button"
-                @click="selectOp(op.value)"
-                @pointerdown="onDragStartOp(op.value)"
-              >
-                <span>{{ op.label }}</span>
+            <div class="numbers-work-area">
+              <div class="numbers-lines">
+                <div
+                  v-for="n in 5"
+                  :key="'pregame-line-' + n"
+                  class="numbers-line"
+                >
+                  <button class="numbers-slot-button is-empty" type="button" disabled></button>
+                  <button class="numbers-op-slot is-empty" type="button" disabled></button>
+                  <button class="numbers-slot-button is-empty" type="button" disabled></button>
+                  <div class="numbers-equals">=</div>
+                  <button class="numbers-slot-button is-result is-empty" type="button" disabled></button>
+                </div>
+              </div>
+
+              <div class="numbers-ops-column">
+                <button
+                  v-for="op in ops"
+                  :key="'pregame-op-' + op.value"
+                  class="numbers-op-button"
+                  type="button"
+                  disabled
+                >
+                  <span>{{ op.label }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="numbers-bottom">
+              <button type="button" disabled>
+                Clear
+              </button>
+              <button type="button" @click="startMode(activeModeId)">
+                Start Game
               </button>
             </div>
-          </div>
+          </template>
 
-          <div class="numbers-bottom">
-            <button type="button" @click="clearAllWorking">
-              Clear
-            </button>
-            <button type="button" @click="restoreBest" :disabled="bestValue == null">
-              {{ restoreBestText }}
-            </button>
-          </div>
+          <template v-else>
+            <div class="numbers-status">
+              <div class="numbers-target">
+                <div class="numbers-label">Target</div>
+                <div class="numbers-target-value">{{ target }}</div>
+              </div>
+
+              <div class="numbers-message">
+                <div class="numbers-label">Now</div>
+                <div class="numbers-message-text">{{ message }}</div>
+              </div>
+            </div>
+
+            <div class="numbers-bank">
+              <div class="numbers-bank-head">
+                <div class="numbers-label">Numbers</div>
+                <div class="numbers-label">{{ liveCount }} live</div>
+              </div>
+
+              <div class="numbers-bank-grid">
+                <button
+                  v-for="tile in startTiles"
+                  :key="tile.id"
+                  class="numbers-tile"
+                  :class="{
+                    'is-used': isStartTileUsed(tile.id),
+                    'is-selected': isSelectedStartTile(tile.id),
+                    'is-valid-drop': bankCanAcceptPlacedTile(tile.id),
+                    'is-original': true
+                  }"
+                  :data-drop-kind="'bank-tile'"
+                  :data-tile-id="tile.id"
+                  type="button"
+                  @click="bankCanAcceptPlacedTile(tile.id) ? returnPlacedTileToBank(tile.id) : selectStartTile(tile.id)"
+                  @pointerdown="onDragStartTile(tile.id, $event)"
+                >
+                  <div class="numbers-tile-value">{{ tile.value }}</div>
+                </button>
+              </div>
+            </div>
+
+            <div class="numbers-work-area">
+              <div class="numbers-lines">
+                <div
+                  v-for="(line, lineIndex) in lines"
+                  :key="lineIndex"
+                  class="numbers-line"
+                >
+                  <button
+                    class="numbers-slot-button"
+                    :class="[
+                      lineDisplayClass(lineIndex, 'aRef'),
+                      {
+                        'is-empty': lineDisplayValue(lineIndex, 'aRef') === '',
+                        'is-filled': lineDisplayValue(lineIndex, 'aRef') !== '',
+                        'is-valid-drop': slotCanAccept(lineIndex, 'aRef'),
+                        'is-selected': isSelectedPlacedTile(lineIndex, 'aRef')
+                      }
+                    ]"
+                    data-drop-kind="tile-slot"
+                    :data-line-index="lineIndex"
+                    data-slot-key="aRef"
+                    type="button"
+                    @click="line.aRef ? selectPlacedTile(lineIndex, 'aRef') : placeIntoTileSlot(lineIndex, 'aRef')"
+                    @pointerdown="line.aRef ? onDragStartPlacedTile(lineIndex, 'aRef', $event) : null"
+                  >
+                    <span v-if="lineDisplayValue(lineIndex, 'aRef') !== ''" class="numbers-slot-big">
+                      {{ lineDisplayValue(lineIndex, 'aRef') }}
+                    </span>
+                  </button>
+
+                  <button
+                    class="numbers-op-slot"
+                    :class="{
+                      'is-empty': !line.op,
+                      'is-filled': !!line.op,
+                      'is-valid-drop': opSlotCanAccept(lineIndex),
+                      'is-selected': isSelectedPlacedOp(lineIndex)
+                    }"
+                    data-drop-kind="op-slot"
+                    :data-line-index="lineIndex"
+                    type="button"
+                    @click="line.op ? selectPlacedOp(lineIndex) : placeIntoOpSlot(lineIndex)"
+                    @pointerdown="line.op ? onDragStartPlacedOp(lineIndex, $event) : null"
+                  >
+                    <span v-if="line.op" class="numbers-op-big">
+                      {{ line.op === '*' ? '×' : line.op === '/' ? '÷' : line.op === '-' ? '−' : '+' }}
+                    </span>
+                  </button>
+
+                  <button
+                    class="numbers-slot-button"
+                    :class="[
+                      lineDisplayClass(lineIndex, 'bRef'),
+                      {
+                        'is-empty': lineDisplayValue(lineIndex, 'bRef') === '',
+                        'is-filled': lineDisplayValue(lineIndex, 'bRef') !== '',
+                        'is-valid-drop': slotCanAccept(lineIndex, 'bRef'),
+                        'is-selected': isSelectedPlacedTile(lineIndex, 'bRef')
+                      }
+                    ]"
+                    data-drop-kind="tile-slot"
+                    :data-line-index="lineIndex"
+                    data-slot-key="bRef"
+                    type="button"
+                    @click="line.bRef ? selectPlacedTile(lineIndex, 'bRef') : placeIntoTileSlot(lineIndex, 'bRef')"
+                    @pointerdown="line.bRef ? onDragStartPlacedTile(lineIndex, 'bRef', $event) : null"
+                  >
+                    <span v-if="lineDisplayValue(lineIndex, 'bRef') !== ''" class="numbers-slot-big">
+                      {{ lineDisplayValue(lineIndex, 'bRef') }}
+                    </span>
+                  </button>
+
+                  <div class="numbers-equals">=</div>
+
+                  <button
+                    class="numbers-slot-button is-result"
+                    :class="{
+                      'is-empty': !lineHasResult(lineIndex),
+                      'is-filled': lineHasResult(lineIndex),
+                      'is-used': lineHasResult(lineIndex) && isResultTileUsed(lineIndex),
+                      'is-selected': isSelectedResultTile(lineIndex),
+                      'is-derived': lineHasResult(lineIndex),
+                      'is-invalid': resultIsInvalid(lineIndex)
+                    }"
+                    type="button"
+                    @click="selectResultTile(lineIndex)"
+                    @pointerdown="lineHasResult(lineIndex) ? onDragStartResult(lineIndex, $event) : null"
+                  >
+                    <span v-if="lineComputedResult(lineIndex).valid" class="numbers-slot-big">
+                      {{ lineComputedResult(lineIndex).value }}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="numbers-ops-column">
+                <button
+                  v-for="op in ops"
+                  :key="op.value"
+                  class="numbers-op-button"
+                  :class="{ 'is-selected': isSelectedOp(op.value) }"
+                  type="button"
+                  @click="selectOp(op.value)"
+                  @pointerdown="onDragStartOp(op.value, $event)"
+                >
+                  <span>{{ op.label }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="numbers-bottom">
+              <button type="button" @click="clearAllWorking">
+                Clear
+              </button>
+              <button type="button" @click="restoreBest" :disabled="bestValue == null">
+                {{ restoreBestText }}
+              </button>
+            </div>
+          </template>
         </section>
       </div>
-
-      <div v-if="menuOpen" class="numbers-drawer-backdrop" @click="menuOpen = false"></div>
-
-      <aside v-if="menuOpen" class="numbers-drawer">
-        <div class="numbers-drawer-head">
-          <div class="numbers-drawer-title">Menu</div>
-          <button class="numbers-close" type="button" @click="menuOpen = false">×</button>
-        </div>
-
-        <button
-          v-for="mode in modes"
-          :key="mode.id"
-          class="numbers-drawer-item"
-          :class="{ 'is-active': mode.id === activeModeId }"
-          type="button"
-          @click="startMode(mode.id)"
-        >
-          <div class="numbers-drawer-item-title">{{ mode.title }}</div>
-          <div class="numbers-drawer-item-sub">{{ mode.subtitle }}</div>
-        </button>
-
-        <div class="numbers-help">
-          Tap to select/unselect. Drag to move.
-        </div>
-      </aside>
     </main>
   `,
 }).mount("#app");
