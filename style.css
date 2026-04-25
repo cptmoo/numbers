@@ -615,3 +615,59 @@ button {
   margin: 6px 0 0 0;
 }
 
+
+
+/* =========================================================
+   SELECTION HIGHLIGHT FIX — must be last
+   ========================================================= */
+
+.numbers-tile.is-selected,
+.numbers-slot-button.is-selected,
+.numbers-op-slot.is-selected,
+.numbers-op-button.is-selected {
+  background: var(--selected-bg) !important;
+  border-color: var(--selected-border) !important;
+  opacity: 1 !important;
+
+  box-shadow:
+    0 0 0 2px rgba(255, 179, 0, 0.45),
+    0 0 14px rgba(255, 179, 0, 0.55) !important;
+
+  transform: translateY(-1px);
+}
+
+/* selected derived tiles should look selected, not just blue */
+.numbers-slot-button.is-derived.is-selected,
+.numbers-slot-button.is-result.is-derived.is-selected {
+  background: var(--selected-bg) !important;
+  border-color: var(--selected-border) !important;
+}
+
+/* selected operator slots */
+.numbers-op-slot.is-selected {
+  border-style: solid;
+}
+
+/* =========================================================
+   VALID DROP HIGHLIGHT FIX — must be after normal styles
+   ========================================================= */
+
+.numbers-tile.is-valid-drop,
+.numbers-slot-button.is-valid-drop,
+.numbers-op-slot.is-valid-drop,
+.numbers-op-button.is-valid-drop {
+  border-color: var(--drop-border) !important;
+  opacity: 1 !important;
+
+  box-shadow:
+    0 0 0 2px rgba(76, 175, 80, 0.35),
+    0 0 14px rgba(76, 175, 80, 0.45) !important;
+}
+
+/* keep selected stronger than valid-drop if both happen */
+.numbers-tile.is-selected,
+.numbers-slot-button.is-selected,
+.numbers-op-slot.is-selected,
+.numbers-op-button.is-selected {
+  border-color: var(--selected-border) !important;
+}
