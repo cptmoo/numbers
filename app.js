@@ -356,7 +356,7 @@ createApp({
         resultText = "No solution found";
       }
 
-      const text = `Numbers ${this.activeMode.title}\n${this.seedLabel}\nTarget: ${this.target}\n${resultText}`;
+      const text = `Numbers ${this.activeMode.title}\n${this.seedLabel}\n${resultText}`;
       navigator.clipboard.writeText(text).then(() => {
         this.message = "Copied!";
       });
