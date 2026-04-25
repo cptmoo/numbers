@@ -9,14 +9,18 @@ createApp({
       target: 124,
       seedLabel: "",
       gameState: "pregame", // 'pregame' | 'playing' | 'finished'
-
+      timeToSolve: null,
       startTiles: [],
       startTileIdCounter: 0,
       lines: [],
-      selectedItem: null, // { kind:'tile'|'op', source:'start'|'result'|'placed', tileId?, op?, fromLineIndex?, fromSlotKey? }
+      selectedItem: null,
 
       bestValue: null,
       bestGap: null,
+      bestSnapshot: null,
+
+      solutionText: null,   // formatted text from findBestSolution()
+      showSolution: false,  // toggles the solution panel
 
       message: "Pick a mode to start",
 
@@ -30,10 +34,10 @@ createApp({
       suppressClickUntil: 0,
 
       modes: [
-        { id: "daily", title: "Daily", type: "daily", duration: 0 },
-        { id: "family", title: "5 min Family", type: "family", duration: 300 },
-        { id: "class", title: "5 min Class", type: "class", duration: 300 },
-        { id: "weird", title: "5 min Weird", type: "weird", duration: 300 },
+        { id: "daily", title: "Daily", type: "daily", duration: 6 },
+        { id: "family", title: "5 min Family", type: "family", duration: 6 },
+        { id: "class", title: "5 min Class", type: "class", duration: 6 },
+        { id: "weird", title: "5 min Weird", type: "weird", duration: 6 },
       ],
 
       ops: [
@@ -57,10 +61,6 @@ createApp({
       return `${mins}:${String(secs).padStart(2, "0")}`;
     },
 
-    restoreBestText() {
-      return this.bestValue == null ? "Restore best" : `Restore ${this.bestValue}`;
-    },
-
     liveCount() {
       let count = 0;
       for (const tile of this.startTiles) {
@@ -79,6 +79,25 @@ createApp({
       }
       return this.lines.length - 1;
     },
+
+    restoreBestText() {
+      return this.bestValue == null ? "Restore" : `Restore ${this.bestValue}`;
+    },
+
+    finishedMessage() {
+      if (this.gameState !== "finished") return "";
+      if (this.bestGap === 0 && this.timeToSolve != null) {
+        return `Solved in ${this.formatTime(this.timeToSolve)}!`;
+      }
+      if (this.bestGap != null) {
+        return `Finished · ${this.bestGap} away`;
+      }
+      return "Time's up!";
+    },
+
+    canCopy() {
+      return this.gameState === "finished";
+    },
   },
 
   mounted() {
@@ -96,6 +115,7 @@ createApp({
   },
 
   methods: {
+    // ─── Game state management ────────────────────────────────────────
     selectMode(modeId) {
       this.activeModeId = modeId;
       this.gameState = "pregame";
@@ -108,14 +128,11 @@ createApp({
       this.selectedItem = null;
       this.bestValue = null;
       this.bestGap = null;
+      this.bestSnapshot = null;
+      this.solutionText = null;
+      this.showSolution = false;
       this.message = "Pick a mode to start";
-      this.dragState = {
-        active: false,
-        pointerId: null,
-        startX: 0,
-        startY: 0,
-        payload: null,
-      };
+      this.dragState = { active: false, pointerId: null, startX: 0, startY: 0, payload: null };
     },
 
     startMode(modeId) {
@@ -129,24 +146,18 @@ createApp({
       this.selectedItem = null;
       this.bestValue = null;
       this.bestGap = null;
-      this.dragState = {
-        active: false,
-        pointerId: null,
-        startX: 0,
-        startY: 0,
-        payload: null,
-      };
+      this.bestSnapshot = null;
+      this.solutionText = null;
+      this.showSolution = false;
+      this.timeToSolve = null;
+      this.dragState = { active: false, pointerId: null, startX: 0, startY: 0, payload: null };
 
       const puzzle = this.generatePuzzle(this.activeMode);
       this.target = puzzle.target;
       this.seedLabel = puzzle.seedLabel;
 
       this.startTileIdCounter = 0;
-      this.startTiles = puzzle.numbers.map((value) => ({
-        id: this.makeStartTileId(),
-        value,
-      }));
-
+      this.startTiles = puzzle.numbers.map((value) => ({ id: this.makeStartTileId(), value }));
       this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
 
       if (this.activeMode.duration > 0 && this.gameState === "playing") {
@@ -159,12 +170,69 @@ createApp({
       this.message = "Select a number or operation";
     },
 
+    // ─── End-game actions ─────────────────────────────────────────────
+    copyResult() {
+      if (this.gameState !== "finished") return;
+      const mode = this.activeMode.title;
+      const seed = this.seedLabel;
+      let resultText = "";
+      if (this.bestGap === 0 && this.timeToSolve != null) {
+        resultText = `Solved in ${this.formatTime(this.timeToSolve)}`;
+      } else if (this.bestGap != null) {
+        resultText = `Off by ${this.bestGap}`;
+      } else {
+        resultText = "No solution found";
+      }
+      const text = `Numbers ${mode}\n${seed}\nTarget: ${this.target}\n${resultText}`;
+      navigator.clipboard.writeText(text).then(() => { this.message = "Copied!"; });
+    },
+
+    showComputerSolution() {
+      if (this.gameState !== "finished") return;
+
+      // If already computed, just toggle visibility
+      if (this.solutionText) {
+        this.showSolution = !this.showSolution;
+        if (this.showSolution) {
+          this.$nextTick(() => {
+            document.getElementById("solution-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
+        return;
+      }
+
+      // Compute and show
+      this.solutionText = this.findBestSolution(this.startTiles.map((t) => t.value), this.target);
+      this.showSolution = true;
+      this.$nextTick(() => {
+        document.getElementById("solution-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+
+    // ─── PLACEHOLDER: solver ─────────────────────────────────────────
+    // TODO: implement a full recursive search over all permutations of
+    // the 6 numbers and 4 operations (including intermediate results),
+    // pruning invalid steps (negative results, non-integer division),
+    // and return the step-by-step working that reaches or comes closest
+    // to the target.
+    findBestSolution(numbers, target) {
+      return (
+        `🔧 Solver not yet implemented.\n\n` +
+        `Numbers available: ${numbers.join(", ")}\n` +
+        `Target: ${target}\n\n` +
+        `When implemented, the step-by-step solution will appear here.`
+      );
+    },
+
+    // ─── Utility ──────────────────────────────────────────────────────
+    formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${String(secs).padStart(2, "0")}`;
+    },
+
     makeEmptyLine() {
-      return {
-        aRef: null,
-        op: null,
-        bRef: null,
-      };
+      return { aRef: null, op: null, bRef: null };
     },
 
     startTimer() {
@@ -173,7 +241,6 @@ createApp({
         if (this.timerSeconds <= 1) {
           this.timerSeconds = 0;
           this.stopTimer();
-          this.message = "Time";
           this.gameState = "finished";
           return;
         }
@@ -182,10 +249,11 @@ createApp({
     },
 
     stopTimer() {
-      if (this.timerId) {
-        clearInterval(this.timerId);
-        this.timerId = null;
-      }
+      if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
+    },
+
+    derivedLabel(lineIndex) {
+      return String.fromCharCode(65 + lineIndex);
     },
 
     makeStartTileId() {
@@ -222,18 +290,15 @@ createApp({
 
     getTileValueFromRef(ref) {
       if (!ref) return null;
-
       if (ref.source === "start") {
         const tile = this.getStartTileById(ref.id);
         return tile ? tile.value : null;
       }
-
       if (ref.source === "result") {
         const lineIndex = this.resultLineIndexFromId(ref.id);
         const result = this.lineComputedResult(lineIndex);
         return result.valid ? result.value : null;
       }
-
       return null;
     },
 
@@ -243,6 +308,27 @@ createApp({
         if (!(ignoreLineIndex === i && ignoreSlotKey === "bRef") && this.sameTileRef(this.lines[i].bRef, ref)) return true;
       }
       return false;
+    },
+
+    lineDependsOnLine(checkLineIndex, targetLineIndex, visited = new Set()) {
+      if (checkLineIndex === targetLineIndex) return true;
+      if (visited.has(checkLineIndex)) return false;
+      visited.add(checkLineIndex);
+      const line = this.lines[checkLineIndex];
+      if (!line) return false;
+      for (const ref of [line.aRef, line.bRef]) {
+        if (ref?.source === "result") {
+          const depLineIndex = this.resultLineIndexFromId(ref.id);
+          if (depLineIndex === targetLineIndex) return true;
+          if (this.lineDependsOnLine(depLineIndex, targetLineIndex, visited)) return true;
+        }
+      }
+      return false;
+    },
+
+    wouldCreateCircularReference(incomingRef, targetLineIndex) {
+      if (!incomingRef || incomingRef.source !== "result") return false;
+      return this.lineDependsOnLine(this.resultLineIndexFromId(incomingRef.id), targetLineIndex);
     },
 
     isStartTileUsed(tileId) {
@@ -274,15 +360,8 @@ createApp({
       const line = this.lines[lineIndex];
       const a = this.getTileValueFromRef(line.aRef);
       const b = this.getTileValueFromRef(line.bRef);
-
-      if (line.aRef == null || line.op == null || line.bRef == null) {
-        return { valid: false, ready: false, value: null };
-      }
-
-      if (a == null || b == null) {
-        return { valid: false, ready: true, value: null };
-      }
-
+      if (line.aRef == null || line.op == null || line.bRef == null) return { valid: false, ready: false, value: null };
+      if (a == null || b == null) return { valid: false, ready: true, value: null };
       return this.calculate(a, line.op, b);
     },
 
@@ -302,49 +381,28 @@ createApp({
 
     makeTileRefFromSelection(sel = this.selectedItem) {
       if (!sel || sel.kind !== "tile") return null;
-
-      if (sel.source === "start") {
-        return { source: "start", id: sel.tileId };
-      }
-
-      if (sel.source === "result") {
-        return { source: "result", id: sel.tileId };
-      }
-
-      if (sel.source === "placed") {
-        return this.lines[sel.fromLineIndex]?.[sel.fromSlotKey] || null;
-      }
-
+      if (sel.source === "start") return { source: "start", id: sel.tileId };
+      if (sel.source === "result") return { source: "result", id: sel.tileId };
+      if (sel.source === "placed") return this.lines[sel.fromLineIndex]?.[sel.fromSlotKey] || null;
       return null;
     },
 
     clearOriginIfPlaced(sel = this.selectedItem) {
       if (!sel) return;
-      if (sel.kind === "tile" && sel.source === "placed") {
-        this.lines[sel.fromLineIndex][sel.fromSlotKey] = null;
-      }
-      if (sel.kind === "op" && sel.source === "placed_op") {
-        this.lines[sel.fromLineIndex].op = null;
-      }
+      if (sel.kind === "tile" && sel.source === "placed") this.lines[sel.fromLineIndex][sel.fromSlotKey] = null;
+      if (sel.kind === "op" && sel.source === "placed_op") this.lines[sel.fromLineIndex].op = null;
     },
 
     isSelectedStartTile(tileId) {
-      return this.selectedItem?.kind === "tile" &&
-        this.selectedItem?.source === "start" &&
-        this.selectedItem?.tileId === tileId;
+      return this.selectedItem?.kind === "tile" && this.selectedItem?.source === "start" && this.selectedItem?.tileId === tileId;
     },
 
     isSelectedResultTile(lineIndex) {
-      return this.selectedItem?.kind === "tile" &&
-        this.selectedItem?.source === "result" &&
-        this.selectedItem?.tileId === this.resultTileIdForLine(lineIndex);
+      return this.selectedItem?.kind === "tile" && this.selectedItem?.source === "result" && this.selectedItem?.tileId === this.resultTileIdForLine(lineIndex);
     },
 
     isSelectedPlacedTile(lineIndex, slotKey) {
-      return this.selectedItem?.kind === "tile" &&
-        this.selectedItem?.source === "placed" &&
-        this.selectedItem?.fromLineIndex === lineIndex &&
-        this.selectedItem?.fromSlotKey === slotKey;
+      return this.selectedItem?.kind === "tile" && this.selectedItem?.source === "placed" && this.selectedItem?.fromLineIndex === lineIndex && this.selectedItem?.fromSlotKey === slotKey;
     },
 
     isSelectedOp(opValue) {
@@ -352,19 +410,13 @@ createApp({
     },
 
     isSelectedPlacedOp(lineIndex) {
-      return this.selectedItem?.kind === "op" &&
-        this.selectedItem?.source === "placed_op" &&
-        this.selectedItem?.fromLineIndex === lineIndex;
+      return this.selectedItem?.kind === "op" && this.selectedItem?.source === "placed_op" && this.selectedItem?.fromLineIndex === lineIndex;
     },
 
     selectStartTile(tileId) {
       if (this.gameState !== "playing") return;
       if (this.shouldIgnoreClick()) return;
-      if (this.isSelectedStartTile(tileId)) {
-        this.selectedItem = null;
-        this.message = "Select a number or operation";
-        return;
-      }
+      if (this.isSelectedStartTile(tileId)) { this.selectedItem = null; this.message = "Select a number or operation"; return; }
       if (this.isStartTileUsed(tileId)) return;
       this.selectedItem = { kind: "tile", source: "start", tileId };
       this.message = "Select a blue space";
@@ -374,11 +426,7 @@ createApp({
       if (this.gameState !== "playing") return;
       if (this.shouldIgnoreClick()) return;
       if (!this.lineHasResult(lineIndex)) return;
-      if (this.isSelectedResultTile(lineIndex)) {
-        this.selectedItem = null;
-        this.message = "Select a number or operation";
-        return;
-      }
+      if (this.isSelectedResultTile(lineIndex)) { this.selectedItem = null; this.message = "Select a number or operation"; return; }
       if (this.isResultTileUsed(lineIndex)) return;
       this.selectedItem = { kind: "tile", source: "result", tileId: this.resultTileIdForLine(lineIndex) };
       this.message = "Select a blue space";
@@ -389,30 +437,15 @@ createApp({
       if (this.shouldIgnoreClick()) return;
       const ref = this.lines[lineIndex][slotKey];
       if (!ref) return;
-
-      if (this.isSelectedPlacedTile(lineIndex, slotKey)) {
-        this.selectedItem = null;
-        this.message = "Select a number or operation";
-        return;
-      }
-
-      this.selectedItem = {
-        kind: "tile",
-        source: "placed",
-        fromLineIndex: lineIndex,
-        fromSlotKey: slotKey,
-      };
+      if (this.isSelectedPlacedTile(lineIndex, slotKey)) { this.selectedItem = null; this.message = "Select a number or operation"; return; }
+      this.selectedItem = { kind: "tile", source: "placed", fromLineIndex: lineIndex, fromSlotKey: slotKey };
       this.message = "Select a blue space or top bank";
     },
 
     selectOp(opValue) {
       if (this.gameState !== "playing") return;
       if (this.shouldIgnoreClick()) return;
-      if (this.isSelectedOp(opValue)) {
-        this.selectedItem = null;
-        this.message = "Select a number or operation";
-        return;
-      }
+      if (this.isSelectedOp(opValue)) { this.selectedItem = null; this.message = "Select a number or operation"; return; }
       this.selectedItem = { kind: "op", op: opValue };
       this.message = "Select a blue space";
     },
@@ -421,19 +454,8 @@ createApp({
       if (this.gameState !== "playing") return;
       if (this.shouldIgnoreClick()) return;
       if (!this.lines[lineIndex].op) return;
-
-      if (this.isSelectedPlacedOp(lineIndex)) {
-        this.selectedItem = null;
-        this.message = "Select a number or operation";
-        return;
-      }
-
-      this.selectedItem = {
-        kind: "op",
-        source: "placed_op",
-        fromLineIndex: lineIndex,
-        op: this.lines[lineIndex].op,
-      };
+      if (this.isSelectedPlacedOp(lineIndex)) { this.selectedItem = null; this.message = "Select a number or operation"; return; }
+      this.selectedItem = { kind: "op", source: "placed_op", fromLineIndex: lineIndex, op: this.lines[lineIndex].op };
       this.message = "Select a blue space";
     },
 
@@ -441,77 +463,67 @@ createApp({
       const selection = this.currentSelection();
       if (!selection || selection.kind !== "tile") return false;
       if (!(slotKey === "aRef" || slotKey === "bRef")) return false;
-
-      const line = this.lines[lineIndex];
-      const targetFilled = line[slotKey] != null;
-
-      if (selection.source === "start") {
-        return this.isNextLine(lineIndex) || targetFilled;
-      }
-
-      if (selection.source === "result") {
-        const sourceLine = this.resultLineIndexFromId(selection.tileId);
-        return this.isNextLine(lineIndex) || (lineIndex > sourceLine && targetFilled);
-      }
-
-      if (selection.source === "placed") {
-        if (selection.fromLineIndex === lineIndex && selection.fromSlotKey === slotKey) return false;
-
-        const movingRef = this.makeTileRefFromSelection(selection);
-        if (!movingRef) return false;
-
-        if (movingRef.source === "start") {
-          return this.isNextLine(lineIndex) || targetFilled;
-        }
-
-        if (movingRef.source === "result") {
-          const sourceLine = this.resultLineIndexFromId(movingRef.id);
-          return this.isNextLine(lineIndex) || (lineIndex > sourceLine && targetFilled);
-        }
-      }
-
-      return false;
+      if (selection.source === "placed" && selection.fromLineIndex === lineIndex && selection.fromSlotKey === slotKey) return false;
+      const incomingRef = this.makeTileRefFromSelection(selection);
+      if (!incomingRef) return false;
+      if (this.wouldCreateCircularReference(incomingRef, lineIndex)) return false;
+      return true;
     },
 
     opSlotCanAccept(lineIndex) {
       const selection = this.currentSelection();
       if (!selection || selection.kind !== "op") return false;
-
-      if (selection.source === "placed_op" && selection.fromLineIndex === lineIndex) {
-        return false;
-      }
-
-      const line = this.lines[lineIndex];
-      return this.isNextLine(lineIndex) || line.op != null;
+      if (selection.source === "placed_op" && selection.fromLineIndex === lineIndex) return false;
+      return true;
     },
 
     bankCanAcceptPlacedTile(tileId) {
       const selection = this.currentSelection();
       if (!selection || selection.kind !== "tile") return false;
       if (selection.source !== "placed") return false;
-
       const movingRef = this.makeTileRefFromSelection(selection);
       return movingRef?.source === "start" && movingRef.id === tileId;
+    },
+
+    resultHomeCanAccept(lineIndex) {
+      const selection = this.currentSelection();
+      if (!selection || selection.kind !== "tile") return false;
+      if (selection.source !== "placed") return false;
+      const movingRef = this.makeTileRefFromSelection(selection);
+      if (!movingRef || movingRef.source !== "result") return false;
+      return movingRef.id === this.resultTileIdForLine(lineIndex);
+    },
+
+    opHomeCanAccept(opValue) {
+      const selection = this.currentSelection();
+      if (!selection || selection.kind !== "op") return false;
+      if (selection.source !== "placed_op") return false;
+      return selection.op === opValue;
+    },
+
+    returnPlacedOpToHome(opValue) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
+      if (!this.opHomeCanAccept(opValue)) return;
+      this.clearOriginIfPlaced(this.selectedItem);
+      this.selectedItem = null;
+      this.refreshBest();
+      this.message = "Returned operation home";
     },
 
     placeIntoTileSlot(lineIndex, slotKey) {
       if (this.gameState !== "playing") return;
       if (this.shouldIgnoreClick()) return;
-      if (!this.slotCanAccept(lineIndex, slotKey)) return;
-
+      if (!this.slotCanAccept(lineIndex, slotKey)) { this.message = "Invalid: circular reference"; return; }
       const incomingRef = this.makeTileRefFromSelection(this.selectedItem);
       if (!incomingRef) return;
-
       const replaced = this.lines[lineIndex][slotKey];
       const originSelection = this.selectedItem;
-
       this.clearOriginIfPlaced(originSelection);
       this.lines[lineIndex][slotKey] = incomingRef;
-
       if (originSelection?.source === "placed" && replaced) {
         this.lines[originSelection.fromLineIndex][originSelection.fromSlotKey] = replaced;
       }
-
       this.selectedItem = null;
       this.refreshBest();
       this.message = "Select a number or operation";
@@ -521,18 +533,14 @@ createApp({
       if (this.gameState !== "playing") return;
       if (this.shouldIgnoreClick()) return;
       if (!this.opSlotCanAccept(lineIndex)) return;
-
       const incomingOp = this.selectedItem.op;
       const replaced = this.lines[lineIndex].op;
       const originSelection = this.selectedItem;
-
       this.clearOriginIfPlaced(originSelection);
       this.lines[lineIndex].op = incomingOp;
-
       if (originSelection?.source === "placed_op" && replaced) {
         this.lines[originSelection.fromLineIndex].op = replaced;
       }
-
       this.selectedItem = null;
       this.refreshBest();
       this.message = "Select a number or operation";
@@ -548,40 +556,37 @@ createApp({
       this.message = "Returned to top";
     },
 
+    returnPlacedResultToHome(lineIndex) {
+      if (this.gameState !== "playing") return;
+      if (this.shouldIgnoreClick()) return;
+      if (!this.resultHomeCanAccept(lineIndex)) return;
+      this.clearOriginIfPlaced(this.selectedItem);
+      this.selectedItem = null;
+      this.refreshBest();
+      this.message = "Returned result home";
+    },
+
     clearAllWorking() {
       if (this.gameState !== "playing") return;
       this.selectedItem = null;
       this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
-      this.bestValue = null;
-      this.bestGap = null;
       this.message = "Select a number or operation";
     },
 
+    cloneRef(ref) { return ref ? { ...ref } : null; },
+
+    cloneLines(lines = this.lines) {
+      return lines.map((line) => ({ aRef: this.cloneRef(line.aRef), op: line.op, bRef: this.cloneRef(line.bRef) }));
+    },
+
     restoreBest() {
-      if (this.gameState !== "playing") return;
-      if (this.bestValue == null) return;
-
-      for (const tile of this.startTiles) {
-        if (tile.value === this.bestValue && !this.isStartTileUsed(tile.id)) {
-          this.selectedItem = { kind: "tile", source: "start", tileId: tile.id };
-          this.message = "Select a blue space";
-          return;
-        }
-      }
-
-      for (let i = 0; i < this.lines.length; i += 1) {
-        const result = this.lineComputedResult(i);
-        if (this.lineHasResult(i) && result.valid && result.value === this.bestValue && !this.isResultTileUsed(i)) {
-          this.selectedItem = { kind: "tile", source: "result", tileId: this.resultTileIdForLine(i) };
-          this.message = "Select a blue space";
-          return;
-        }
-      }
+      if (!this.bestSnapshot) return;
+      this.selectedItem = null;
+      this.lines = this.cloneLines(this.bestSnapshot);
+      this.message = `Restored best: ${this.bestValue}`;
     },
 
     refreshBest() {
-      this.bestValue = null;
-      this.bestGap = null;
       for (let i = 0; i < this.lines.length; i += 1) {
         const result = this.lineComputedResult(i);
         if (result.valid) this.updateBest(result.value);
@@ -593,6 +598,12 @@ createApp({
       if (this.bestGap == null || gap < this.bestGap) {
         this.bestGap = gap;
         this.bestValue = value;
+        this.bestSnapshot = this.cloneLines();
+      }
+      if (gap === 0 && this.gameState === "playing") {
+        this.timeToSolve = this.activeMode.duration - this.timerSeconds;
+        this.stopTimer();
+        this.gameState = "finished";
       }
     },
 
@@ -604,8 +615,7 @@ createApp({
         return { valid: true, ready: true, value: a - b };
       }
       if (op === "/") {
-        if (b === 0) return { valid: false, ready: true, value: null };
-        if (a % b !== 0) return { valid: false, ready: true, value: null };
+        if (b === 0 || a % b !== 0) return { valid: false, ready: true, value: null };
         return { valid: true, ready: true, value: a / b };
       }
       return { valid: false, ready: false, value: null };
@@ -613,13 +623,7 @@ createApp({
 
     beginPointerDrag(payload, event) {
       if (this.gameState !== "playing") return;
-      this.dragState = {
-        active: false,
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        payload,
-      };
+      this.dragState = { active: false, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, payload };
     },
 
     onDragStartTile(tileId, event) {
@@ -649,52 +653,33 @@ createApp({
 
     onGlobalPointerMove(event) {
       if (this.dragState.pointerId !== event.pointerId || !this.dragState.payload) return;
-
       if (!this.dragState.active) {
         const dx = event.clientX - this.dragState.startX;
         const dy = event.clientY - this.dragState.startY;
         if ((dx * dx) + (dy * dy) < 64) return;
-
         this.dragState.active = true;
         this.selectedItem = this.dragState.payload;
-        this.message = this.dragState.payload.kind === "tile"
-          ? "Release on a blue space"
-          : "Release on an operator space";
+        this.message = this.dragState.payload.kind === "tile" ? "Release on a green space" : "Release on an operator space";
       }
     },
 
     finishPointerDrag() {
-      this.dragState = {
-        active: false,
-        pointerId: null,
-        startX: 0,
-        startY: 0,
-        payload: null,
-      };
+      this.dragState = { active: false, pointerId: null, startX: 0, startY: 0, payload: null };
     },
 
     handleDropTarget(target) {
       if (!target || !this.dragState.active || !this.dragState.payload) return false;
-
       const dropKind = target.dataset.dropKind;
-      if (dropKind === "tile-slot") {
-        this.placeIntoTileSlot(Number(target.dataset.lineIndex), target.dataset.slotKey);
-        return true;
-      }
-      if (dropKind === "op-slot") {
-        this.placeIntoOpSlot(Number(target.dataset.lineIndex));
-        return true;
-      }
-      if (dropKind === "bank-tile") {
-        this.returnPlacedTileToBank(target.dataset.tileId);
-        return true;
-      }
+      if (dropKind === "tile-slot") { this.placeIntoTileSlot(Number(target.dataset.lineIndex), target.dataset.slotKey); return true; }
+      if (dropKind === "op-slot") { this.placeIntoOpSlot(Number(target.dataset.lineIndex)); return true; }
+      if (dropKind === "op-home") { this.returnPlacedOpToHome(target.dataset.opValue); return true; }
+      if (dropKind === "bank-tile") { this.returnPlacedTileToBank(target.dataset.tileId); return true; }
+      if (dropKind === "result-home") { this.returnPlacedResultToHome(Number(target.dataset.lineIndex)); return true; }
       return false;
     },
 
     onGlobalPointerUp(event) {
       if (this.dragState.pointerId !== event.pointerId) return;
-
       const wasDragging = this.dragState.active;
       if (wasDragging) {
         const el = document.elementFromPoint(event.clientX, event.clientY);
@@ -702,11 +687,8 @@ createApp({
         this.handleDropTarget(dropTarget);
         this.suppressClickUntil = Date.now() + 80;
       }
-
       this.finishPointerDrag();
-      if (wasDragging && !this.selectedItem) {
-        this.message = "Select a number or operation";
-      }
+      if (wasDragging && !this.selectedItem) this.message = "Select a number or operation";
     },
 
     onGlobalPointerCancel(event) {
@@ -732,19 +714,13 @@ createApp({
         const pick = Math.floor(rand() * largeBag.length);
         nums.push(largeBag.splice(pick, 1)[0]);
       }
-
       while (nums.length < 6) {
         const pick = Math.floor(rand() * smallBag.length);
         nums.push(smallBag.splice(pick, 1)[0]);
       }
-
       this.shuffle(nums, rand);
 
-      return {
-        numbers: nums,
-        target: 100 + Math.floor(rand() * 900),
-        seedLabel: slot,
-      };
+      return { numbers: nums, target: 100 + Math.floor(rand() * 900), seedLabel: slot };
     },
 
     localDateStamp(date) {
@@ -832,13 +808,14 @@ createApp({
         </section>
 
         <section class="numbers-board">
+
+          <!-- ── PRE-GAME ─────────────────────────────────────────── -->
           <template v-if="gameState === 'pregame'">
             <div class="numbers-status">
               <div class="numbers-target">
                 <div class="numbers-label">Target</div>
                 <div class="numbers-target-value">—</div>
               </div>
-
               <div class="numbers-message">
                 <div class="numbers-label">Now</div>
                 <div class="numbers-message-text">Pick a mode to start</div>
@@ -850,15 +827,8 @@ createApp({
                 <div class="numbers-label">Numbers</div>
                 <div class="numbers-label">0 live</div>
               </div>
-
               <div class="numbers-bank-grid">
-                <button
-                  v-for="n in 6"
-                  :key="'pregame-bank-' + n"
-                  class="numbers-tile"
-                  type="button"
-                  disabled
-                >
+                <button v-for="n in 6" :key="'pregame-bank-' + n" class="numbers-tile" type="button" disabled>
                   <div class="numbers-tile-value">&nbsp;</div>
                 </button>
               </div>
@@ -866,11 +836,7 @@ createApp({
 
             <div class="numbers-work-area">
               <div class="numbers-lines">
-                <div
-                  v-for="n in 5"
-                  :key="'pregame-line-' + n"
-                  class="numbers-line"
-                >
+                <div v-for="n in 5" :key="'pregame-line-' + n" class="numbers-line">
                   <button class="numbers-slot-button is-empty" type="button" disabled></button>
                   <button class="numbers-op-slot is-empty" type="button" disabled></button>
                   <button class="numbers-slot-button is-empty" type="button" disabled></button>
@@ -878,40 +844,37 @@ createApp({
                   <button class="numbers-slot-button is-result is-empty" type="button" disabled></button>
                 </div>
               </div>
-
               <div class="numbers-ops-column">
-                <button
-                  v-for="op in ops"
-                  :key="'pregame-op-' + op.value"
-                  class="numbers-op-button"
-                  type="button"
-                  disabled
-                >
+                <button v-for="op in ops" :key="'pregame-op-' + op.value" class="numbers-op-button" type="button" disabled>
                   <span>{{ op.label }}</span>
                 </button>
               </div>
             </div>
 
             <div class="numbers-bottom">
-              <button type="button" disabled>
-                Clear
-              </button>
-              <button type="button" @click="startMode(activeModeId)">
-                Start Game
-              </button>
+              <button type="button" disabled>Solution</button>
+              <button type="button" @click="startMode(activeModeId)">Start Game</button>
+              <button type="button" disabled title="Copy result">⧉</button>
             </div>
           </template>
 
+          <!-- ── PLAYING / FINISHED ──────────────────────────────── -->
           <template v-else>
+
+            <!-- Finished banner -->
+            <div v-if="gameState === 'finished'" class="numbers-finished-banner">
+              <span class="numbers-finished-icon">{{ bestGap === 0 ? '🎉' : '🏁' }}</span>
+              <span class="numbers-finished-text">{{ finishedMessage }}</span>
+            </div>
+
             <div class="numbers-status">
               <div class="numbers-target">
                 <div class="numbers-label">Target</div>
                 <div class="numbers-target-value">{{ target }}</div>
               </div>
-
               <div class="numbers-message">
-                <div class="numbers-label">Now</div>
-                <div class="numbers-message-text">{{ message }}</div>
+                <div class="numbers-label">{{ gameState === 'finished' ? 'Result' : 'Now' }}</div>
+                <div class="numbers-message-text">{{ gameState === 'finished' ? finishedMessage : message }}</div>
               </div>
             </div>
 
@@ -920,7 +883,6 @@ createApp({
                 <div class="numbers-label">Numbers</div>
                 <div class="numbers-label">{{ liveCount }} live</div>
               </div>
-
               <div class="numbers-bank-grid">
                 <button
                   v-for="tile in startTiles"
@@ -945,11 +907,9 @@ createApp({
 
             <div class="numbers-work-area">
               <div class="numbers-lines">
-                <div
-                  v-for="(line, lineIndex) in lines"
-                  :key="lineIndex"
-                  class="numbers-line"
-                >
+                <div v-for="(line, lineIndex) in lines" :key="lineIndex" class="numbers-line">
+
+                  <!-- A slot -->
                   <button
                     class="numbers-slot-button"
                     :class="[
@@ -968,11 +928,15 @@ createApp({
                     @click="line.aRef ? selectPlacedTile(lineIndex, 'aRef') : placeIntoTileSlot(lineIndex, 'aRef')"
                     @pointerdown="line.aRef ? onDragStartPlacedTile(lineIndex, 'aRef', $event) : null"
                   >
+                    <span v-if="lines[lineIndex].aRef && lines[lineIndex].aRef.source === 'result'" class="numbers-derived-label">
+                      {{ derivedLabel(resultLineIndexFromId(lines[lineIndex].aRef.id)) }}
+                    </span>
                     <span v-if="lineDisplayValue(lineIndex, 'aRef') !== ''" class="numbers-slot-big">
                       {{ lineDisplayValue(lineIndex, 'aRef') }}
                     </span>
                   </button>
 
+                  <!-- Op slot -->
                   <button
                     class="numbers-op-slot"
                     :class="{
@@ -984,7 +948,7 @@ createApp({
                     data-drop-kind="op-slot"
                     :data-line-index="lineIndex"
                     type="button"
-                    @click="line.op ? selectPlacedOp(lineIndex) : placeIntoOpSlot(lineIndex)"
+                    @click="opSlotCanAccept(lineIndex) ? placeIntoOpSlot(lineIndex) : line.op ? selectPlacedOp(lineIndex) : null"
                     @pointerdown="line.op ? onDragStartPlacedOp(lineIndex, $event) : null"
                   >
                     <span v-if="line.op" class="numbers-op-big">
@@ -992,6 +956,7 @@ createApp({
                     </span>
                   </button>
 
+                  <!-- B slot -->
                   <button
                     class="numbers-slot-button"
                     :class="[
@@ -1010,6 +975,9 @@ createApp({
                     @click="line.bRef ? selectPlacedTile(lineIndex, 'bRef') : placeIntoTileSlot(lineIndex, 'bRef')"
                     @pointerdown="line.bRef ? onDragStartPlacedTile(lineIndex, 'bRef', $event) : null"
                   >
+                    <span v-if="lines[lineIndex].bRef && lines[lineIndex].bRef.source === 'result'" class="numbers-derived-label">
+                      {{ derivedLabel(resultLineIndexFromId(lines[lineIndex].bRef.id)) }}
+                    </span>
                     <span v-if="lineDisplayValue(lineIndex, 'bRef') !== ''" class="numbers-slot-big">
                       {{ lineDisplayValue(lineIndex, 'bRef') }}
                     </span>
@@ -1017,6 +985,7 @@ createApp({
 
                   <div class="numbers-equals">=</div>
 
+                  <!-- Result slot -->
                   <button
                     class="numbers-slot-button is-result"
                     :class="{
@@ -1024,13 +993,19 @@ createApp({
                       'is-filled': lineHasResult(lineIndex),
                       'is-used': lineHasResult(lineIndex) && isResultTileUsed(lineIndex),
                       'is-selected': isSelectedResultTile(lineIndex),
+                      'is-valid-drop': resultHomeCanAccept(lineIndex),
                       'is-derived': lineHasResult(lineIndex),
                       'is-invalid': resultIsInvalid(lineIndex)
                     }"
+                    :data-drop-kind="'result-home'"
+                    :data-line-index="lineIndex"
                     type="button"
-                    @click="selectResultTile(lineIndex)"
+                    @click="resultHomeCanAccept(lineIndex) ? returnPlacedResultToHome(lineIndex) : selectResultTile(lineIndex)"
                     @pointerdown="lineHasResult(lineIndex) ? onDragStartResult(lineIndex, $event) : null"
                   >
+                    <span v-if="lineComputedResult(lineIndex).valid" class="numbers-derived-label">
+                      {{ derivedLabel(lineIndex) }}
+                    </span>
                     <span v-if="lineComputedResult(lineIndex).valid" class="numbers-slot-big">
                       {{ lineComputedResult(lineIndex).value }}
                     </span>
@@ -1043,9 +1018,14 @@ createApp({
                   v-for="op in ops"
                   :key="op.value"
                   class="numbers-op-button"
-                  :class="{ 'is-selected': isSelectedOp(op.value) }"
+                  :class="{
+                    'is-selected': isSelectedOp(op.value),
+                    'is-valid-drop': opHomeCanAccept(op.value)
+                  }"
+                  :data-drop-kind="'op-home'"
+                  :data-op-value="op.value"
                   type="button"
-                  @click="selectOp(op.value)"
+                  @click="opHomeCanAccept(op.value) ? returnPlacedOpToHome(op.value) : selectOp(op.value)"
                   @pointerdown="onDragStartOp(op.value, $event)"
                 >
                   <span>{{ op.label }}</span>
@@ -1053,14 +1033,42 @@ createApp({
               </div>
             </div>
 
+            <!-- Single bottom bar — labels change at end of game -->
             <div class="numbers-bottom">
-              <button type="button" @click="clearAllWorking">
-                Clear
+              <button
+                type="button"
+                :class="{ 'numbers-bottom-highlight': gameState === 'finished' }"
+                @click="gameState === 'finished' ? showComputerSolution() : clearAllWorking()"
+              >
+                {{ gameState === 'finished' ? (showSolution ? 'Hide' : 'Solution') : 'Clear' }}
               </button>
-              <button type="button" @click="restoreBest" :disabled="bestValue == null">
+              <button
+                type="button"
+                @click="restoreBest"
+                :disabled="!bestSnapshot"
+              >
                 {{ restoreBestText }}
               </button>
+              <button
+                type="button"
+                :disabled="!canCopy"
+                :title="canCopy ? 'Copy result' : 'Finish game to copy'"
+                @click="copyResult"
+              >
+                ⧉
+              </button>
             </div>
+
+            <!-- Solution panel — scrolled into view when opened -->
+            <div
+              v-if="showSolution && solutionText"
+              id="solution-panel"
+              class="numbers-solution-panel"
+            >
+              <div class="numbers-label">Best Solution</div>
+              <pre class="numbers-solution-text">{{ solutionText }}</pre>
+            </div>
+
           </template>
         </section>
       </div>

@@ -1,3 +1,7 @@
+/* =========================================================
+   1. Theme variables
+   ========================================================= */
+
 :root {
   --bg: #ececec;
   --card: #ffffff;
@@ -9,14 +13,24 @@
   --line-strong: rgba(20, 24, 35, 0.28);
   --dashed: #1d1d1d;
 
-  --blue: #2563eb;
-  --blue-soft: rgba(37, 99, 235, 0.12);
-  --blue-border: rgba(37, 99, 235, 0.7);
-  --blue-glow: 0 0 0 4px rgba(37, 99, 235, 0.14);
-
   --used-bg: #e9ebef;
   --used-text: #9aa3b2;
   --used-line: rgba(20, 24, 35, 0.08);
+
+  --derived-bg: #e8f2ff;
+  --derived-border: #9fc5ff;
+  --derived-label: #4a6fa5;
+
+  --selected-bg: #ffe7b3;
+  --selected-border: #ffb300;
+  --selected-glow: 0 0 0 2px rgba(255, 179, 0, 0.35);
+
+  --drop-border: #4caf50;
+  --drop-glow: 0 0 0 2px rgba(76, 175, 80, 0.25);
+
+  --invalid-bg: rgba(220, 38, 38, 0.08);
+  --invalid-border: rgba(220, 38, 38, 0.45);
+  --invalid-text: rgba(180, 40, 40, 0.9);
 
   --shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 
@@ -34,6 +48,11 @@
   --ops-col-w: 58px;
 }
 
+
+/* =========================================================
+   2. Reset and base page
+   ========================================================= */
+
 * {
   box-sizing: border-box;
 }
@@ -44,17 +63,27 @@ body {
   min-height: 100%;
 }
 
+html {
+  touch-action: manipulation;
+}
+
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
 
 button {
   font: inherit;
   color: inherit;
 }
+
+
+/* =========================================================
+   3. App shell
+   ========================================================= */
 
 .numbers-app {
   width: min(100%, var(--app-width));
@@ -70,51 +99,21 @@ button {
   gap: var(--gap);
 }
 
+
+/* =========================================================
+   4. Header
+   ========================================================= */
+
 .numbers-top {
   padding: 2px 2px 0;
 }
 
 .numbers-top-row {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   align-items: start;
 }
-
-.numbers-menu,
-.numbers-pill {
-  border: 1px solid var(--line-strong);
-  background: var(--card);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-}
-
-.numbers-menu {
-  width: 50px;
-  height: 50px;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.numbers-burger {
-  width: 22px;
-  height: 16px;
-  position: relative;
-}
-
-.numbers-burger span {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--text);
-}
-
-.numbers-burger span:nth-child(1) { top: 0; }
-.numbers-burger span:nth-child(2) { top: 6.5px; }
-.numbers-burger span:nth-child(3) { bottom: 0; }
 
 .numbers-brand {
   min-width: 0;
@@ -142,6 +141,10 @@ button {
   min-width: 86px;
   padding: 6px 10px;
   text-align: center;
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
 }
 
 .numbers-pill-label {
@@ -158,6 +161,40 @@ button {
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
+
+
+/* =========================================================
+   5. Mode buttons
+   ========================================================= */
+
+.numbers-modes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.numbers-mode-button {
+  min-height: 54px;
+  padding: 8px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  font-weight: 900;
+  line-height: 1.05;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.numbers-mode-button.active {
+  background: var(--selected-bg);
+  border-color: var(--selected-border);
+}
+
+
+/* =========================================================
+   6. Main board panels
+   ========================================================= */
 
 .numbers-board {
   background: var(--card);
@@ -177,7 +214,8 @@ button {
 }
 
 .numbers-target,
-.numbers-message {
+.numbers-message,
+.numbers-bank {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--panel);
@@ -215,10 +253,12 @@ button {
   font-weight: 700;
 }
 
+
+/* =========================================================
+   7. Number bank
+   ========================================================= */
+
 .numbers-bank {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
   padding: 10px;
 }
 
@@ -233,15 +273,6 @@ button {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
-}
-
-.numbers-tile,
-.numbers-slot-button,
-.numbers-op-button,
-.numbers-op-slot {
-  -webkit-user-select: none;
-  user-select: none;
-  touch-action: none;
 }
 
 .numbers-tile {
@@ -261,20 +292,10 @@ button {
   line-height: 1;
 }
 
-.numbers-tile.is-used {
-  background: var(--used-bg);
-  color: var(--used-text);
-  border-color: var(--used-line);
-}
 
-.numbers-tile.is-selected,
-.numbers-op-button.is-selected,
-.numbers-slot-button.is-valid-drop,
-.numbers-op-slot.is-valid-drop {
-  border-color: var(--blue-border);
-  background: var(--blue-soft);
-  box-shadow: var(--blue-glow);
-}
+/* =========================================================
+   8. Working area and equation rows
+   ========================================================= */
 
 .numbers-work-area {
   display: grid;
@@ -285,12 +306,12 @@ button {
 
 .numbers-lines {
   border: 2px dashed var(--dashed);
-  touch-action: none;
   border-radius: var(--radius-lg);
   background: #fcfcfd;
   padding: 8px;
   display: grid;
   gap: 8px;
+  touch-action: none;
 }
 
 .numbers-line {
@@ -312,6 +333,7 @@ button {
 }
 
 .numbers-slot-button {
+  position: relative;
   border: 2px dashed var(--dashed);
 }
 
@@ -350,6 +372,11 @@ button {
   line-height: 1;
 }
 
+
+/* =========================================================
+   9. Operations column
+   ========================================================= */
+
 .numbers-ops-column {
   display: grid;
   gap: 8px;
@@ -371,13 +398,25 @@ button {
   line-height: 1;
 }
 
+
+/* =========================================================
+   10. Bottom action buttons
+   ========================================================= */
+
 .numbers-bottom {
   display: grid;
-  grid-template-columns: 1fr 1.6fr;
+  grid-template-columns: 1fr 1fr auto;
   gap: 10px;
 }
 
-.numbers-bottom button {
+.numbers-bottom button:last-child {
+  width: 48px;
+  padding: 0;
+  font-size: 1.4rem;
+}
+
+.numbers-bottom button,
+.numbers-start {
   min-height: 48px;
   border-radius: 14px;
   border: 1px solid var(--line-strong);
@@ -386,86 +425,88 @@ button {
   cursor: pointer;
 }
 
-.numbers-bottom button:disabled {
+.numbers-bottom button:disabled,
+.numbers-start:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.numbers-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.28);
-}
-
-.numbers-drawer {
-  position: fixed;
-  inset: 0 auto 0 0;
-  width: min(310px, 84vw);
-  background: #fff;
-  border-right: 1px solid var(--line);
-  box-shadow: 18px 0 36px rgba(0, 0, 0, 0.12);
-  padding: max(12px, env(safe-area-inset-top)) 12px 12px;
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.numbers-drawer-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.numbers-drawer-title {
-  font-size: 1.35rem;
+.numbers-start {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
   font-weight: 900;
 }
 
-.numbers-close {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--line-strong);
-  background: #fff;
-  cursor: pointer;
+
+/* =========================================================
+   11. Shared interaction behaviour
+   ========================================================= */
+
+.numbers-tile,
+.numbers-slot-button,
+.numbers-op-button,
+.numbers-op-slot {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 
-.numbers-drawer-item {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  padding: 12px;
-  text-align: left;
-  cursor: pointer;
+
+/* =========================================================
+   12. Tile states
+   ========================================================= */
+
+.is-used {
+  background: var(--used-bg) !important;
+  color: var(--used-text) !important;
+  border-color: var(--used-line) !important;
+  opacity: 0.55;
 }
 
-.numbers-drawer-item.is-active {
-  border-color: var(--blue-border);
-  background: var(--blue-soft);
+.is-derived {
+  background: var(--derived-bg) !important;
+  border-color: var(--derived-border) !important;
 }
 
-.numbers-drawer-item-title {
+.is-selected {
+  background: var(--selected-bg) !important;
+  border-color: var(--selected-border) !important;
+  box-shadow: var(--selected-glow) !important;
+}
+
+.is-valid-drop {
+  border-color: var(--drop-border) !important;
+  box-shadow: var(--drop-glow) !important;
+}
+
+.numbers-slot-button.is-invalid {
+  border-color: var(--invalid-border) !important;
+  background: var(--invalid-bg) !important;
+  color: var(--invalid-text) !important;
+}
+
+
+/* =========================================================
+   13. Derived value labels
+   ========================================================= */
+
+.numbers-derived-label {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-size: 0.65rem;
   font-weight: 900;
-  font-size: 0.98rem;
+  color: var(--derived-label);
+  line-height: 1;
+  opacity: 0.9;
+  pointer-events: none;
 }
 
-.numbers-drawer-item-sub {
-  margin-top: 4px;
-  font-size: 0.8rem;
-  color: var(--muted);
-  font-weight: 700;
-}
 
-.numbers-help {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  padding: 12px;
-  font-size: 0.86rem;
-  color: var(--muted);
-  font-weight: 700;
-  line-height: 1.35;
-}
+/* =========================================================
+   14. Small screens
+   ========================================================= */
 
 @media (max-width: 390px) {
   :root {
@@ -475,7 +516,7 @@ button {
   }
 
   .numbers-top-row {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: 1fr auto;
   }
 
   .numbers-pill:last-child {
@@ -499,118 +540,71 @@ button {
     width: 20px;
     font-size: 1.35rem;
   }
+
+  .numbers-mode-button {
+    font-size: 0.82rem;
+    min-height: 50px;
+    padding: 7px 4px;
+  }
 }
 
-.numbers-slot-button.is-used {
-  background: var(--used-bg);
-  color: var(--used-text);
-  border-color: var(--used-line);
+/* =========================================================
+   15. Finished banner
+   ========================================================= */
+
+.numbers-finished-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--selected-bg);
+  border: 1px solid var(--selected-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--selected-glow);
 }
 
-.numbers-slot-button.is-selected {
-  border-color: var(--blue-border);
-  background: var(--blue-soft);
-  box-shadow: var(--blue-glow);
+.numbers-finished-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
-.numbers-slot-button.is-used {
-  background: var(--used-bg);
-  color: var(--used-text);
-  border-color: var(--used-line);
-}
-
-.numbers-slot-button.is-selected {
-  border-color: var(--blue-border);
-  background: var(--blue-soft);
-  box-shadow: var(--blue-glow);
-}
-
-.numbers-slot-button.is-original,
-.numbers-tile.is-original {
-  background-image: none;
-}
-
-.numbers-slot-button.is-derived,
-.numbers-tile.is-derived {
-  background-image: linear-gradient(
-    180deg,
-    rgba(37, 99, 235, 0.035),
-    rgba(37, 99, 235, 0.08)
-  );
-}
-
-.numbers-slot-button.is-invalid {
-  border-color: rgba(220, 38, 38, 0.45);
-  background: rgba(220, 38, 38, 0.08);
-  color: rgba(180, 40, 40, 0.9);
-}
-
-.numbers-slot-button.is-used {
-  background: var(--used-bg);
-  color: var(--used-text);
-  border-color: var(--used-line);
-}
-
-.numbers-slot-button.is-selected,
-.numbers-op-slot.is-selected,
-.numbers-op-button.is-selected {
-  border-color: var(--blue-border);
-  background: var(--blue-soft);
-  box-shadow: var(--blue-glow);
-}
-
-.numbers-slot-button.is-original,
-.numbers-tile.is-original {
-  background-image: none;
-}
-
-.numbers-slot-button.is-derived,
-.numbers-tile.is-derived {
-  background:
-    linear-gradient(180deg, rgba(37, 99, 235, 0.10), rgba(37, 99, 235, 0.22)),
-    #ffffff;
-  border-color: rgba(37, 99, 235, 0.35);
-}
-
-.numbers-slot-button.is-invalid {
-  border-color: rgba(220, 38, 38, 0.45);
-  background: rgba(220, 38, 38, 0.08);
-  color: rgba(180, 40, 40, 0.9);
-}
-
-.numbers-tile.is-valid-drop,
-.numbers-slot-button.is-valid-drop,
-.numbers-op-slot.is-valid-drop {
-  border-color: var(--blue-border);
-  background: var(--blue-soft);
-  box-shadow: var(--blue-glow);
-}
-
-
-.numbers-modes {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.numbers-mode-button {
-  padding: 10px;
-  border-radius: 14px;
-  border: 1px solid var(--line-strong);
-  background: #fff;
+.numbers-finished-text {
+  font-size: 1rem;
   font-weight: 800;
-  cursor: pointer;
+  line-height: 1.2;
 }
 
-.numbers-mode-button.active {
-  background: var(--blue-soft);
-  border-color: var(--blue-border);
+
+/* =========================================================
+   16. Bottom bar — highlight state for Solution button
+   ========================================================= */
+
+.numbers-bottom-highlight {
+  background: var(--derived-bg) !important;
+  border-color: var(--derived-border) !important;
+  color: var(--derived-label) !important;
 }
 
-.numbers-start {
-  margin-top: 12px;
+
+/* =========================================================
+   17. Solution panel
+   ========================================================= */
+
+.numbers-solution-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
   padding: 12px;
-  border-radius: 16px;
-  font-weight: 900;
+  scroll-margin-top: 12px;
+}
+
+.numbers-solution-text {
+  margin: 8px 0 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
 }
