@@ -15,7 +15,6 @@
 
   --used-bg: #e9ebef;
   --used-text: #9aa3b2;
-  --used-line: rgba(20, 24, 35, 0.08);
 
   --derived-bg: #e8f2ff;
   --derived-border: #9fc5ff;
@@ -23,21 +22,16 @@
 
   --selected-bg: #ffe7b3;
   --selected-border: #ffb300;
-  --selected-glow: 0 0 0 2px rgba(255, 179, 0, 0.35);
 
   --drop-border: #4caf50;
-  --drop-glow: 0 0 0 2px rgba(76, 175, 80, 0.25);
 
   --invalid-bg: rgba(220, 38, 38, 0.08);
   --invalid-border: rgba(220, 38, 38, 0.45);
-  --invalid-text: rgba(180, 40, 40, 0.9);
 
-  --shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  --shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
 
-  --radius-xl: 22px;
   --radius-lg: 18px;
   --radius-md: 14px;
-  --radius-sm: 10px;
 
   --app-width: 430px;
   --gap: 10px;
@@ -48,50 +42,31 @@
   --ops-col-w: 58px;
 }
 
-
 /* =========================================================
-   2. Reset and base page
+   2. Base
    ========================================================= */
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
 body {
   margin: 0;
-  min-height: 100%;
-}
-
-html {
-  touch-action: manipulation;
-}
-
-body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: system-ui, sans-serif;
   background: var(--bg);
-  color: var(--text);
-  -webkit-tap-highlight-color: transparent;
-  overscroll-behavior: none;
 }
 
 button {
   font: inherit;
-  color: inherit;
+  border: none;
 }
 
-
 /* =========================================================
-   3. App shell
+   3. Layout
    ========================================================= */
 
 .numbers-app {
   width: min(100%, var(--app-width));
   margin: 0 auto;
-  padding:
-    max(8px, env(safe-area-inset-top))
-    8px
-    max(10px, env(safe-area-inset-bottom));
+  padding: 10px;
 }
 
 .numbers-shell {
@@ -99,47 +74,299 @@ button {
   gap: var(--gap);
 }
 
-
 /* =========================================================
    4. Header
    ========================================================= */
 
-.numbers-top {
-  padding: 2px 2px 0;
+.numbers-title {
+  font-size: 2rem;
+  font-weight: 900;
 }
+
+.numbers-sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* =========================================================
+   5. Mode buttons (FIXED)
+   ========================================================= */
+
+.numbers-modes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.numbers-mode-button {
+  border-radius: 999px;
+  background: white;
+  border: 1px solid var(--line-strong);
+  padding: 6px 4px;
+
+  display: flex;
+  flex-direction: column; /* KEY FIX */
+  align-items: center;
+  justify-content: center;
+
+  min-height: 58px;
+}
+
+.numbers-mode-title {
+  font-size: 0.95rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.numbers-mode-sub {
+  font-size: 0.85rem;   /* smaller brackets */
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.numbers-mode-button.active {
+  background: var(--selected-bg);
+  border-color: var(--selected-border);
+}
+
+/* =========================================================
+   6. Board panels
+   ========================================================= */
+
+.numbers-board {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+/* =========================================================
+   7. Status row (TARGET + MESSAGE FIXED)
+   ========================================================= */
+
+.numbers-status {
+  display: grid;
+  grid-template-columns: 110px 1fr; /* smaller target */
+  gap: 10px;
+  align-items: stretch;
+
+}
+
+/* TARGET — smaller */
+.numbers-target {
+  padding: 8px;
+  background: var(--panel);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.numbers-target-value {
+  font-size: 2.2rem; /* reduced */
+  font-weight: 900;
+}
+
+/* MESSAGE — bigger */
+.numbers-message {
+  padding: 10px;
+  background: var(--panel);
+  border-radius: var(--radius-md);
+
+  display: flex;
+  align-items: center;
+}
+
+.numbers-message-text {
+  font-size: 1.0rem;  /* bigger */
+
+}
+
+/* =========================================================
+   8. Number bank
+   ========================================================= */
+
+.numbers-bank-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.numbers-tile {
+  height: var(--tile-h);
+  background: white;
+  border: 2px solid var(--line-strong);
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.numbers-tile-value {
+  font-size: 1.4rem;
+  font-weight: 900;
+}
+
+/* =========================================================
+   9. Working area
+   ========================================================= */
+
+.numbers-work-area {
+  display: grid;
+  grid-template-columns: 1fr var(--ops-col-w);
+  gap: 10px;
+}
+
+.numbers-lines {
+  border: 2px dashed var(--dashed);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.numbers-line {
+  display: grid;
+  grid-template-columns: 1fr var(--op-w) 1fr var(--eq-w) 1fr;
+  gap: 8px;
+}
+
+.numbers-slot-button,
+.numbers-op-slot {
+  height: var(--tile-h);
+  background: white;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.numbers-slot-button {
+  border: 2px dashed var(--dashed);
+}
+
+.numbers-op-slot {
+  border: 2px dashed var(--dashed);
+}
+
+.numbers-slot-big,
+.numbers-op-big {
+  font-size: 1.4rem;
+  font-weight: 900;
+}
+
+.numbers-equals {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+}
+
+.numbers-tile,
+.numbers-slot-button,
+.numbers-op-button,
+.numbers-op-slot {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none; /* THIS FIXES DRAG */
+}
+
+
+/* =========================================================
+   10. Ops column
+   ========================================================= */
+
+.numbers-op-button {
+  height: var(--tile-h);
+  background: white;
+  border-radius: 10px;
+  border: 2px solid var(--line-strong);
+}
+
+/* =========================================================
+   11. Bottom buttons
+   ========================================================= */
+
+.numbers-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
+.numbers-bottom button {
+  height: 48px;
+  border-radius: 12px;
+  background: white;
+  border: 1px solid var(--line-strong);
+  font-weight: 800;
+}
+
+/* =========================================================
+   12. States
+   ========================================================= */
+
+.is-used {
+  opacity: 0.4;
+}
+
+.is-selected {
+  background: var(--selected-bg);
+}
+
+.is-valid-drop {
+  border-color: var(--drop-border);
+}
+
+.is-invalid {
+  background: var(--invalid-bg);
+  border-color: var(--invalid-border);
+}
+
+/* =========================================================
+   13. Derived label
+   ========================================================= */
+
+.numbers-derived-label {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  font-size: 0.6rem;
+  font-weight: 900;
+}
+
+/* =========================================================
+   14. Mobile tweaks
+   ========================================================= */
+
+@media (max-width: 390px) {
+  .numbers-status {
+    grid-template-columns: 90px 1fr;
+  }
+
+  .numbers-target-value {
+    font-size: 1.8rem;
+  }
+
+  .numbers-message-text {
+    font-size: 0.9rem;
+  }
+}
+
+/* =========================================================
+   HEADER FIX — Time / Best pills
+   ========================================================= */
 
 .numbers-top-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr 76px 76px;
   gap: 8px;
   align-items: start;
 }
 
 .numbers-brand {
   min-width: 0;
-  padding-top: 2px;
-}
-
-.numbers-title {
-  font-size: 2.2rem;
-  line-height: 1;
-  font-weight: 900;
-  letter-spacing: -0.03em;
-}
-
-.numbers-sub {
-  margin-top: 4px;
-  font-size: 0.86rem;
-  color: var(--muted);
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .numbers-pill {
-  min-width: 86px;
-  padding: 6px 10px;
+  min-width: 0;
+  padding: 6px 8px;
   text-align: center;
   border: 1px solid var(--line-strong);
   background: var(--card);
@@ -148,248 +375,107 @@ button {
 }
 
 .numbers-pill-label {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 800;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  line-height: 1;
 }
 
 .numbers-pill-value {
-  font-size: 1.2rem;
+  margin-top: 3px;
+  font-size: 1.15rem;
   font-weight: 900;
-  line-height: 1.1;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
+@media (max-width: 390px) {
+  .numbers-top-row {
+    grid-template-columns: 1fr 68px 68px;
+    gap: 6px;
+  }
 
-/* =========================================================
-   5. Mode buttons
-   ========================================================= */
+  .numbers-pill {
+    padding: 5px 6px;
+  }
 
-.numbers-modes {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.numbers-mode-button {
-  min-height: 54px;
-  padding: 8px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: #fff;
-  font-weight: 900;
-  line-height: 1.05;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-}
-
-.numbers-mode-button.active {
-  background: var(--selected-bg);
-  border-color: var(--selected-border);
+  .numbers-pill-value {
+    font-size: 1rem;
+  }
 }
 
 
 /* =========================================================
-   6. Main board panels
+   DERIVED TILES — blue glow + A–E labels
    ========================================================= */
 
-.numbers-board {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow);
-  padding: 10px;
-  display: grid;
-  gap: 10px;
-}
-
-.numbers-status {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: stretch;
-}
-
-.numbers-target,
-.numbers-message,
-.numbers-bank {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-}
-
-.numbers-target {
-  padding: 10px 12px;
-}
-
-.numbers-message {
-  width: 144px;
-  padding: 10px;
-}
-
-.numbers-label {
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.numbers-target-value {
-  margin-top: 2px;
-  font-size: clamp(2.5rem, 10vw, 4rem);
-  line-height: 0.95;
-  font-weight: 900;
-  letter-spacing: -0.05em;
-}
-
-.numbers-message-text {
-  margin-top: 6px;
-  font-size: 0.92rem;
-  line-height: 1.15;
-  font-weight: 700;
-}
-
-
-/* =========================================================
-   7. Number bank
-   ========================================================= */
-
-.numbers-bank {
-  padding: 10px;
-}
-
-.numbers-bank-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.numbers-bank-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.numbers-tile {
-  min-height: var(--tile-h);
-  border: 2px solid var(--line-strong);
-  border-radius: 12px;
-  background: #fff;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  padding: 4px;
-}
-
-.numbers-tile-value {
-  font-size: clamp(1.15rem, 5vw, 1.8rem);
-  font-weight: 900;
-  line-height: 1;
-}
-
-
-/* =========================================================
-   8. Working area and equation rows
-   ========================================================= */
-
-.numbers-work-area {
-  display: grid;
-  grid-template-columns: 1fr var(--ops-col-w);
-  gap: 10px;
-  align-items: start;
-}
-
-.numbers-lines {
-  border: 2px dashed var(--dashed);
-  border-radius: var(--radius-lg);
-  background: #fcfcfd;
-  padding: 8px;
-  display: grid;
-  gap: 8px;
-  touch-action: none;
-}
-
-.numbers-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--op-w) minmax(0, 1fr) var(--eq-w) minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-}
-
-.numbers-slot-button,
-.numbers-op-slot {
-  min-height: var(--tile-h);
-  border-radius: 12px;
-  background: #fff;
-  padding: 4px;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
+/* make tile positioning context for label */
 .numbers-slot-button {
   position: relative;
-  border: 2px dashed var(--dashed);
 }
 
-.numbers-op-slot {
-  width: var(--op-w);
-  border: 2px dashed var(--dashed);
+/* derived tiles (results + reused results) */
+.is-derived {
+  background: #e8f2ff;
+  border-color: #9fc5ff !important;
+
+  box-shadow:
+    0 0 0 1px rgba(100, 150, 255, 0.25),
+    0 0 10px rgba(100, 150, 255, 0.35);
 }
 
-.numbers-slot-button.is-filled,
-.numbers-op-slot.is-filled {
-  border-style: solid;
-  border-color: var(--line-strong);
+/* subtle glow when hovered/active (optional but nice) */
+.is-derived:hover {
+  box-shadow:
+    0 0 0 1px rgba(100, 150, 255, 0.35),
+    0 0 14px rgba(100, 150, 255, 0.45);
 }
 
-.numbers-slot-button.is-result {
-  background: #fff;
-}
+/* derived label (A–E) */
+.numbers-derived-label {
+  position: absolute;
+  top: 4px;
+  left: 6px;
 
-.numbers-slot-button.is-empty,
-.numbers-op-slot.is-empty {
-  color: transparent;
-}
-
-.numbers-slot-big,
-.numbers-op-big {
-  font-size: clamp(1.2rem, 5vw, 2rem);
+  font-size: 0.6rem;
   font-weight: 900;
-  line-height: 1;
+  color: #4a6fa5;
+
+  background: rgba(255,255,255,0.85);
+  padding: 1px 4px;
+  border-radius: 6px;
+
+  pointer-events: none;
 }
 
-.numbers-equals {
-  width: var(--eq-w);
-  text-align: center;
-  font-size: 1.6rem;
-  font-weight: 900;
-  line-height: 1;
+/* make result tiles slightly more distinct */
+.numbers-slot-button.is-result.is-derived {
+  background: #dfeeff;
 }
-
 
 /* =========================================================
-   9. Operations column
+   OPERATION BUTTONS — restore style
    ========================================================= */
 
 .numbers-ops-column {
   display: grid;
   gap: 8px;
+  align-content: start;
 }
 
 .numbers-op-button {
   height: var(--tile-h);
+  width: 100%;
   border: 2px solid var(--line-strong);
   border-radius: 12px;
   background: #fff;
   display: grid;
   place-items: center;
   cursor: pointer;
+  padding: 0;
+  box-shadow: var(--shadow);
 }
 
 .numbers-op-button span {
@@ -398,213 +484,134 @@ button {
   line-height: 1;
 }
 
-
-/* =========================================================
-   10. Bottom action buttons
-   ========================================================= */
-
-.numbers-bottom {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 10px;
+.numbers-op-button.is-selected {
+  background: var(--selected-bg);
+  border-color: var(--selected-border);
+  box-shadow: var(--selected-glow);
 }
 
-.numbers-bottom button:last-child {
-  width: 48px;
-  padding: 0;
-  font-size: 1.4rem;
+.numbers-op-button.is-valid-drop {
+  border-color: var(--drop-border);
+  box-shadow: var(--drop-glow);
 }
 
-.numbers-bottom button,
-.numbers-start {
-  min-height: 48px;
-  border-radius: 14px;
-  border: 1px solid var(--line-strong);
-  background: #fff;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.numbers-bottom button:disabled,
-.numbers-start:disabled {
+.numbers-op-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.numbers-start {
-  margin-top: 12px;
-  padding: 12px;
-  border-radius: 16px;
+
+
+/* =========================================================
+   NUMBER BANK — restore proper tile look
+   ========================================================= */
+
+.numbers-bank-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.numbers-tile {
+  height: var(--tile-h);
+  border-radius: 12px;
+  border: 2px solid var(--line-strong);
+  background: #fff;
+
+  display: grid;
+  place-items: center;
+
   font-weight: 900;
+  cursor: pointer;
+
+  box-shadow: var(--shadow);
+}
+
+.numbers-tile-value {
+  font-size: 1.4rem;
+}
+
+/* used tiles fade */
+.numbers-tile.is-used {
+  background: var(--used-bg);
+  color: var(--used-text);
+  opacity: 0.6;
 }
 
 
 /* =========================================================
-   11. Shared interaction behaviour
+   BOARD BORDER — solid instead of dashed
    ========================================================= */
 
-.numbers-tile,
-.numbers-slot-button,
-.numbers-op-button,
-.numbers-op-slot {
-  -webkit-user-select: none;
-  user-select: none;
-  touch-action: none;
-}
-
-
-/* =========================================================
-   12. Tile states
-   ========================================================= */
-
-.is-used {
-  background: var(--used-bg) !important;
-  color: var(--used-text) !important;
-  border-color: var(--used-line) !important;
-  opacity: 0.55;
-}
-
-.is-derived {
-  background: var(--derived-bg) !important;
-  border-color: var(--derived-border) !important;
-}
-
-.is-selected {
-  background: var(--selected-bg) !important;
-  border-color: var(--selected-border) !important;
-  box-shadow: var(--selected-glow) !important;
-}
-
-.is-valid-drop {
-  border-color: var(--drop-border) !important;
-  box-shadow: var(--drop-glow) !important;
-}
-
-.numbers-slot-button.is-invalid {
-  border-color: var(--invalid-border) !important;
-  background: var(--invalid-bg) !important;
-  color: var(--invalid-text) !important;
-}
-
-
-/* =========================================================
-   13. Derived value labels
-   ========================================================= */
-
-.numbers-derived-label {
-  position: absolute;
-  top: 4px;
-  left: 6px;
-  font-size: 0.65rem;
-  font-weight: 900;
-  color: var(--derived-label);
-  line-height: 1;
-  opacity: 0.9;
-  pointer-events: none;
-}
-
-
-/* =========================================================
-   14. Small screens
-   ========================================================= */
-
-@media (max-width: 390px) {
-  :root {
-    --tile-h: 52px;
-    --op-w: 48px;
-    --ops-col-w: 54px;
-  }
-
-  .numbers-top-row {
-    grid-template-columns: 1fr auto;
-  }
-
-  .numbers-pill:last-child {
-    display: none;
-  }
-
-  .numbers-status {
-    grid-template-columns: 1fr;
-  }
-
-  .numbers-message {
-    width: auto;
-  }
-
-  .numbers-line {
-    gap: 6px;
-    grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr) 20px minmax(0, 1fr);
-  }
-
-  .numbers-equals {
-    width: 20px;
-    font-size: 1.35rem;
-  }
-
-  .numbers-mode-button {
-    font-size: 0.82rem;
-    min-height: 50px;
-    padding: 7px 4px;
-  }
-}
-
-/* =========================================================
-   15. Finished banner
-   ========================================================= */
-
-.numbers-finished-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--selected-bg);
-  border: 1px solid var(--selected-border);
+.numbers-lines {
+  border: 2px solid var(--line-strong); /* ← changed */
   border-radius: var(--radius-md);
-  box-shadow: var(--selected-glow);
-}
-
-.numbers-finished-icon {
-  font-size: 1.5rem;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.numbers-finished-text {
-  font-size: 1rem;
-  font-weight: 800;
-  line-height: 1.2;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
 }
 
 
 /* =========================================================
-   16. Bottom bar — highlight state for Solution button
+   TILE SLOTS — stay dashed
    ========================================================= */
 
-.numbers-bottom-highlight {
-  background: var(--derived-bg) !important;
-  border-color: var(--derived-border) !important;
-  color: var(--derived-label) !important;
+.numbers-slot-button,
+.numbers-op-slot {
+  border: 2px dashed var(--dashed);
 }
 
 
 /* =========================================================
-   17. Solution panel
+   OPTIONAL: nicer hover/feel (quick polish)
+   ========================================================= */
+
+.numbers-tile:hover:not(.is-used) {
+  transform: translateY(-1px);
+}
+
+
+/* =========================================================
+   NUMBER BANK HEADER
+   ========================================================= */
+
+.numbers-bank-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.numbers-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+
+
+/* =========================================================
+   SOLUTION PANEL FIX — wrap text properly
    ========================================================= */
 
 .numbers-solution-panel {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  padding: 12px;
-  scroll-margin-top: 12px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .numbers-solution-text {
-  margin: 8px 0 0;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.82rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text);
+  white-space: pre-wrap;   /* allow wrapping */
+  word-break: break-word;  /* break long chunks */
+  overflow-wrap: anywhere; /* extra safety */
+
+  font-size: 0.85rem;
+  line-height: 1.3;
+
+  margin: 6px 0 0 0;
 }
+
