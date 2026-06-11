@@ -143,6 +143,8 @@ createApp({
     window.addEventListener("pointermove", this.onGlobalPointerMove);
     window.addEventListener("pointerup", this.onGlobalPointerUp);
     window.addEventListener("pointercancel", this.onGlobalPointerCancel);
+    window.addEventListener("focus", this.handleReturnToScreen);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
   },
 
   beforeUnmount() {
@@ -150,6 +152,8 @@ createApp({
     window.removeEventListener("pointermove", this.onGlobalPointerMove);
     window.removeEventListener("pointerup", this.onGlobalPointerUp);
     window.removeEventListener("pointercancel", this.onGlobalPointerCancel);
+    window.removeEventListener("focus", this.handleReturnToScreen);
+    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
   },
 
   methods: {
@@ -221,8 +225,16 @@ createApp({
           this.currentSlotKey = newKey;
           this.refreshSubLabels();
         }
-      }, 1000);
-    },    
+      }, 5000);
+    },
+    handleVisibilityChange() {
+      if (!document.hidden) this.handleReturnToScreen();
+    },
+
+    handleReturnToScreen() {
+      this.refreshSubLabels();
+      this.startSlotWatcher();
+    },        
     stopSlotWatcher() {
       if (this.slotTimerId) {
         clearInterval(this.slotTimerId);
