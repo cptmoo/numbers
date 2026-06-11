@@ -347,19 +347,32 @@ createApp({
     copyResult() {
       if (this.gameState !== "finished") return;
 
-      let resultText = "";
-      if (this.bestGap === 0 && this.timeToSolve != null) {
-        resultText = `Solved in ${this.formatTime(this.timeToSolve)}`;
-      } else if (this.bestGap != null) {
-        resultText = `Off by ${this.bestGap}`;
-      } else {
-        resultText = "No solution found";
-      }
+      const resultText =
+        this.bestGap === 0 && this.timeToSolve != null
+          ? `${this.formatTime(this.timeToSolve)} solved`
+          : this.bestGap != null
+            ? `Off by ${this.bestGap}`
+            : "No solution found";
 
-      const text = `Numbers ${this.activeMode.title}\n${this.seedLabel}\n${resultText}`;
+      const dateText = this.formatCopyDate(this.seedLabel);
+
+      const text = `Numbers · ${resultText} · ${this.activeMode.title} ${dateText}`;
+
       navigator.clipboard.writeText(text).then(() => {
         this.message = "Copied!";
       });
+    },
+
+    formatCopyDate(seedLabel) {
+      const datePart = String(seedLabel).slice(0, 10);
+      const [y, m, d] = datePart.split("-").map(Number);
+
+      if (!y || !m || !d) return seedLabel;
+
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+      return `${d}-${months[m - 1]}`;
     },
 
     showComputerSolution() {
