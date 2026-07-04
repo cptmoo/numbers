@@ -758,6 +758,7 @@ createApp({
 
     findBestSolution(numbers, target) {
       const EPS = 1e-9;
+      const MAX_VALUE = 100000;
 
       const cleanNumbers = numbers
         .map(Number)
@@ -767,18 +768,133 @@ createApp({
         return "No valid numbers or target found.";
       }
 
-      let best = null;
-      let foundExact = false;
+      const n = cleanNumbers.length;
+      const fullMask = (1 << n) - 1;
 
-      const makeItem = (value) => ({
+      const popcount = (mask) => {
+        let count = 0;
+        while (mask) {
+          count += mask & 1;
+          mask >>= 1;
+        }
+        return count;
+      };
+
+      const makeItem = (value, text, steps) => ({
         value,
-        text: String(value),
-        steps: [],
-        used: 0,
+        text,
+        steps,
       });
 
-      const startItems = cleanNumbers.map(makeItem);
-      const maxDepth = cleanNumbers.length - 1;
+      const isUsefulValue = (value) =>
+        Number.isFinite(value) &&
+        Number.isInteger(value) &&
+        value > 0 &&
+        value <= MAX_VALUE;
+
+      const addToMap = (map, item) => {
+        if (!isUsefulValue(item.value)) return;
+
+        const existing = map.get(item.value);
+
+        if (
+          !existing ||
+          item.steps.length < existing.steps.length ||
+          (
+            item.steps.length === existing.steps.length &&
+            item.steps.join("").length < existing.steps.join("").length
+          )
+        ) {
+          map.set(item.value, item);
+        }
+      };
+
+      const combineItems = (a, b) => {
+        const results = [];
+
+        const addResult = (value, symbol, left, right) => {
+          if (!isUsefulValue(value)) return;
+
+          const rounded = Math.round(value);
+          const step = `${left.text} ${symbol} ${right.text} = ${rounded}`;
+
+          results.push(
+            makeItem(
+              rounded,
+              String(rounded),
+              [...left.steps, ...right.steps, step]
+            )
+          );
+        };
+
+        // Addition: commutative, so only once
+        addResult(a.value + b.value, "+", a, b);
+
+        // Multiplication: commutative, so only once
+        // Avoid multiplication by 1 because it rarely creates useful Countdown-style steps
+        if (a.value !== 1 && b.value !== 1) {
+          addResult(a.value * b.value, "×", a, b);
+        }
+
+        // Subtraction: positive results only
+        if (a.value > b.value) {
+          addResult(a.value - b.value, "−", a, b);
+        } else if (b.value > a.value) {
+          addResult(b.value - a.value, "−", b, a);
+        }
+
+        // Division: exact integer division only
+        // Avoid division by 1
+        if (b.value !== 1 && a.value % b.value === 0) {
+          addResult(a.value / b.value, "÷", a, b);
+        }
+
+        if (a.value !== 1 && b.value % a.value === 0) {
+          addResult(b.value / a.value, "÷", b, a);
+        }
+
+        return results;
+      };
+
+      const dp = Array.from({ length: fullMask + 1 }, () => new Map());
+
+      // Base cases: each starting number by itself
+      for (let i = 0; i < n; i++) {
+        const mask = 1 << i;
+        const value = cleanNumbers[i];
+        addToMap(dp[mask], makeItem(value, String(value), []));
+      }
+
+      // Build results for every subset of numbers
+      for (let size = 2; size <= n; size++) {
+        for (let mask = 1; mask <= fullMask; mask++) {
+          if (popcount(mask) !== size) continue;
+
+          // Split mask into two non-empty disjoint parts
+          for (let leftMask = (mask - 1) & mask; leftMask > 0; leftMask = (leftMask - 1) & mask) {
+            const rightMask = mask ^ leftMask;
+            if (!rightMask) continue;
+
+            // Avoid doing both A|B and B|A
+            if (leftMask > rightMask) continue;
+
+            const leftItems = dp[leftMask];
+            const rightItems = dp[rightMask];
+
+            if (!leftItems.size || !rightItems.size) continue;
+
+            for (const a of leftItems.values()) {
+              for (const b of rightItems.values()) {
+                for (const result of combineItems(a, b)) {
+                  addToMap(dp[mask], result);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      let best = null;
 
       const isBetter = (candidate, currentBest) => {
         if (!currentBest) return true;
@@ -789,133 +905,22 @@ createApp({
         if (candidateDiff < bestDiff) return true;
         if (candidateDiff > bestDiff) return false;
 
+        // For exact ties, prefer the fewest operations.
         if (candidate.steps.length < currentBest.steps.length) return true;
         if (candidate.steps.length > currentBest.steps.length) return false;
 
-        return candidate.text.length < currentBest.text.length;
+        // Then prefer cleaner-looking output.
+        return candidate.steps.join("").length < currentBest.steps.join("").length;
       };
 
-      const consider = (item) => {
-        if (isBetter(item, best)) {
-          best = item;
-        }
-
-        if (Math.abs(item.value - target) < EPS) {
-          foundExact = true;
-          return true;
-        }
-
-        return false;
-      };
-
-      const stateKey = (items) =>
-        items
-          .map((item) => item.value)
-          .sort((a, b) => a - b)
-          .join(",");
-
-      const combine = (a, b) => {
-        const results = [];
-
-        const addResult = (value, symbol, left, right) => {
-          if (!Number.isFinite(value)) return;
-          if (value <= 0) return;
-          if (Math.abs(value - Math.round(value)) > EPS) return;
-
-          value = Math.round(value);
-
-          const step = `${left.text} ${symbol} ${right.text} = ${value}`;
-
-          results.push({
-            value,
-            text: String(value),
-            steps: [...left.steps, ...right.steps, step],
-            used: left.used + right.used + 1,
-          });
-        };
-
-        // Addition: commutative, so only once
-        addResult(a.value + b.value, "+", a, b);
-
-        // Multiplication: commutative, so only once
-        // Prune multiplication by 1 because it does not create a useful new result
-        if (a.value !== 1 && b.value !== 1) {
-          addResult(a.value * b.value, "×", a, b);
-        }
-
-        // Subtraction: only positive results
-        if (a.value > b.value) {
-          addResult(a.value - b.value, "−", a, b);
-        } else if (b.value > a.value) {
-          addResult(b.value - a.value, "−", b, a);
-        }
-
-        // Division: only exact integer division
-        // Prune division by 1 because it does not create a useful new result
-        if (b.value !== 1 && a.value % b.value === 0) {
-          addResult(a.value / b.value, "÷", a, b);
-        }
-
-        if (a.value !== 1 && b.value % a.value === 0) {
-          addResult(b.value / a.value, "÷", b, a);
-        }
-
-        // Prefer results closer to the target
-        results.sort((x, y) => {
-          const dx = Math.abs(x.value - target);
-          const dy = Math.abs(y.value - target);
-          return dx - dy;
-        });
-
-        return results;
-      };
-
-      const search = (items, depthLimit, seen) => {
-        for (const item of items) {
-          if (consider(item)) return true;
-        }
-
-        const currentDepth = Math.max(...items.map((item) => item.used));
-
-        if (currentDepth >= depthLimit) return false;
-        if (items.length < 2) return false;
-
-        const key = `${stateKey(items)}|${currentDepth}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-
-        for (let i = 0; i < items.length; i++) {
-          for (let j = i + 1; j < items.length; j++) {
-            const a = items[i];
-            const b = items[j];
-
-            const remaining = items.filter((_, index) => index !== i && index !== j);
-            const nextResults = combine(a, b);
-
-            for (const result of nextResults) {
-              const nextItems = [...remaining, result];
-
-              if (search(nextItems, depthLimit, seen)) {
-                return true;
-              }
-            }
+      // Consider every subset, not just all six numbers.
+      // This lets the solver find shorter solutions that use fewer numbers.
+      for (let mask = 1; mask <= fullMask; mask++) {
+        for (const item of dp[mask].values()) {
+          if (isBetter(item, best)) {
+            best = item;
           }
         }
-
-        return false;
-      };
-
-      // Iterative deepening:
-      // Search 0-step, then 1-step, then 2-step solutions, etc.
-      // Therefore the first exact solution found is a shortest exact solution.
-      for (let depthLimit = 0; depthLimit <= maxDepth; depthLimit++) {
-        const seen = new Set();
-
-        if (search(startItems, depthLimit, seen)) {
-          break;
-        }
-
-        if (foundExact) break;
       }
 
       if (!best) {
@@ -944,7 +949,6 @@ createApp({
         best.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")
       );
     },
-
     generatePuzzle(modeId, seedLabel) {
       const sl = seedLabel || this.computeSeedLabel(modeId);
       const seedString = `numbers|${modeId}|${sl}`;
@@ -978,12 +982,19 @@ createApp({
         const subIdx = Math.floor(rand() * subModes.length);
         const sub = subModes[subIdx];
 
-        if (sub.largeTiles) {
-          largePool = [...sub.largeTiles];
-          largeCount = 1 + Math.floor(rand() * largePool.length);
-        } else {
-          largeCount = sub.largeCount;
-        }
+      if (sub.largeTiles) {
+        largePool = [...sub.largeTiles];
+
+        const countRoll = rand();
+
+        largeCount =
+          countRoll < 0.35 ? 1 :
+          countRoll < 0.75 ? 2 :
+          countRoll < 0.95 ? 3 :
+                            4;
+      } else {
+        largeCount = sub.largeCount;
+      }
       }
 
       const largeBag = [...largePool];
