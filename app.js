@@ -249,6 +249,11 @@ createApp({
       this.startTiles = saved.startTiles || [];
       this.startTileIdCounter = this.startTiles.length;
       this.lines = saved.lines || Array.from({ length: 5 }, () => this.makeEmptyLine());
+      if (this.linesHaveCircularReference(this.lines)) {
+        this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
+        this.bestSnapshot = null;
+        this.message = "Invalid saved working was cleared";
+      }
       this.bestValue = saved.bestValue;
       this.bestGap = saved.bestGap;
       this.bestSnapshot = saved.bestSnapshot;
@@ -791,7 +796,73 @@ createApp({
 
       return false;
     },
+    lineDependsOnLineInLines(lines, checkLineIndex, targetLineIndex, visited = new Set()) {
+      if (checkLineIndex === targetLineIndex) return true;
+      if (visited.has(checkLineIndex)) return false;
+      visited.add(checkLineIndex);
 
+      const line = lines[checkLineIndex];
+      if (!line) return false;
+
+      for (const ref of [line.aRef, line.bRef]) {
+        if (ref?.source === "result") {
+          const dep = this.resultLineIndexFromId(ref.id);
+
+          if (!Number.isInteger(dep)) return false;
+
+          if (
+            dep === targetLineIndex ||
+            this.lineDependsOnLineInLines(lines, dep, targetLineIndex, visited)
+          ) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    },
+
+    linesHaveCircularReference(lines) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
+
+        for (const ref of [line.aRef, line.bRef]) {
+          if (ref?.source !== "result") continue;
+
+          const dep = this.resultLineIndexFromId(ref.id);
+
+          if (!Number.isInteger(dep)) return true;
+
+          if (dep === i || this.lineDependsOnLineInLines(lines, dep, i)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    },
+
+    wouldMoveCreateCircularReference(origin, incomingRef, targetLineIndex, targetSlotKey) {
+      if (!incomingRef) return true;
+
+      const draft = this.cloneLines();
+      const replaced = draft[targetLineIndex]?.[targetSlotKey] || null;
+
+      if (!draft[targetLineIndex]) return true;
+
+      if (origin?.source === "placed") {
+        draft[origin.fromLineIndex][origin.fromSlotKey] = null;
+      }
+
+      draft[targetLineIndex][targetSlotKey] = this.cloneRef(incomingRef);
+
+      if (origin?.source === "placed" && replaced) {
+        draft[origin.fromLineIndex][origin.fromSlotKey] = this.cloneRef(replaced);
+      }
+
+      return this.linesHaveCircularReference(draft);
+    },
     wouldCreateCircularReference(incomingRef, targetLineIndex) {
       if (!incomingRef || incomingRef.source !== "result") return false;
       return this.lineDependsOnLine(this.resultLineIndexFromId(incomingRef.id), targetLineIndex);
@@ -948,11 +1019,21 @@ createApp({
       const sel = this.currentSelection();
       if (!sel || sel.kind !== "tile") return false;
       if (!(slotKey === "aRef" || slotKey === "bRef")) return false;
-      if (sel.source === "placed" && sel.fromLineIndex === lineIndex && sel.fromSlotKey === slotKey) return false;
+
+      if (
+        sel.source === "placed" &&
+        sel.fromLineIndex === lineIndex &&
+        sel.fromSlotKey === slotKey
+      ) {
+        return false;
+      }
 
       const incomingRef = this.makeTileRefFromSelection(sel);
       if (!incomingRef) return false;
-      if (this.wouldCreateCircularReference(incomingRef, lineIndex)) return false;
+
+      if (this.wouldMoveCreateCircularReference(sel, incomingRef, lineIndex, slotKey)) {
+        return false;
+      }
 
       return true;
     },
@@ -999,16 +1080,23 @@ createApp({
     placeIntoTileSlot(lineIndex, slotKey) {
       if (this.gameState !== "playing") return;
       if (this.shouldIgnoreClick()) return;
+
+      const origin = this.selectedItem;
+      const incomingRef = this.makeTileRefFromSelection(origin);
+
+      if (!incomingRef) return;
+
       if (!this.slotCanAccept(lineIndex, slotKey)) {
         this.message = "Can't place there";
         return;
       }
 
-      const incomingRef = this.makeTileRefFromSelection(this.selectedItem);
-      if (!incomingRef) return;
+      if (this.wouldMoveCreateCircularReference(origin, incomingRef, lineIndex, slotKey)) {
+        this.message = "That would make a circular reference";
+        return;
+      }
 
       const replaced = this.lines[lineIndex][slotKey];
-      const origin = this.selectedItem;
 
       this.clearOriginIfPlaced(origin);
       this.lines[lineIndex][slotKey] = incomingRef;
