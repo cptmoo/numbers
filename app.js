@@ -25,6 +25,7 @@ createApp({
     return {
       activeModeId: "daily",
       timerSeconds: 0,
+      tourTransitionTimerId: null,
       timerId: null,
       currentSlotKey: null,
       slotTimerId: null,
@@ -56,7 +57,25 @@ createApp({
         { id: "family", title: "Family", slotMinutes: 5 },
         { id: "class", title: "Class", slotMinutes: 5 },
         { id: "weird", title: "Weird", slotMinutes: 5 },
+        { id: "tour", title: "Tour", slotMinutes: 5 },
       ],
+      tourSteps: [
+        { modeId: "family", title: "Family" },
+        { modeId: "class", title: "Class" },
+        { modeId: "weird", title: "Weird" },
+      ],
+      
+      tourState: {
+        active: false,
+        status: "idle", // idle | playing | finished
+        seedLabel: "",
+        stepIndex: 0,
+        totalSeconds: 0,
+        transitioning: false,
+        boards: [],
+      },
+
+      tourReviewIndex: null,
 
       modeSubLabels: {},
 
@@ -80,7 +99,10 @@ createApp({
     },
 
     timeText() {
-      const total = Math.max(0, this.timerSeconds || 0);
+      const total = this.isTourFinished
+        ? this.tourState.totalSeconds
+        : Math.max(0, this.timerSeconds || 0);
+
       const mins = Math.floor(total / 60);
       const secs = total % 60;
       return `${mins}:${String(secs).padStart(2, "0")}`;
@@ -98,7 +120,76 @@ createApp({
       }
       return count;
     },
+    isTourActive() {
+      return this.activeModeId === "tour" && this.tourState.active && this.tourState.status === "playing";
+    },
 
+    isTourFinished() {
+      return this.activeModeId === "tour" && this.tourState.status === "finished";
+    },
+
+    tourStepTitle() {
+      if (!this.tourState.active) return "";
+      return this.tourSteps[this.tourState.stepIndex]?.title || "";
+    },
+
+    tourStepElapsedSeconds() {
+      if (!this.tourState.active) return 0;
+      return Math.max(0, 60 - this.timerSeconds);
+    },
+
+    tourSolvedCount() {
+      return this.tourState.boards.filter((board) => board?.solved).length;
+    },
+
+    tourReviewRows() {
+      if (!this.tourState.boards.length) return [];
+
+      return this.tourSteps.map((step, index) => {
+        const board = this.tourState.boards[index];
+
+        if (!board) {
+          return {
+            title: step.title,
+            status: "Not played",
+            detail: "—",
+            timeText: "—",
+          };
+        }
+
+        const status = board.solved ? "Solved" : "Passed";
+
+        let detail = "";
+        if (board.solved) {
+          detail = `Target ${board.target}`;
+        } else if (board.bestValue == null) {
+          detail = `Target ${board.target} · No result`;
+        } else {
+          detail = `Target ${board.target} · Best ${board.bestValue} · ${board.bestGap} away`;
+        }
+
+        return {
+          title: board.title,
+          status,
+          detail,
+          timeText: this.formatTime(board.timeUsedSeconds),
+        };
+      });
+    },
+    tourReviewTitle() {
+      if (this.tourReviewIndex == null) return "";
+      return this.tourState.boards[this.tourReviewIndex]?.title || "";
+    },
+
+    tourReviewSubtitle() {
+      if (this.tourReviewIndex == null) return "";
+
+      const board = this.tourState.boards[this.tourReviewIndex];
+      if (!board) return "";
+
+      const status = board.solved ? "Solved" : "Passed";
+      return `${status} · ${this.formatTime(board.timeUsedSeconds)}`;
+    },
     restoreBestText() {
       if (this.gameState === "pregame") return "Start";
       return this.bestValue == null ? "Restore" : `Restore ${this.bestValue}`;
@@ -110,12 +201,19 @@ createApp({
     },
 
     finishedMessage() {
+      if (this.isTourFinished) {
+        const solvedCount = this.tourState.boards.filter((board) => board?.solved).length;
+        return `Tour finished · ${solvedCount}/3 solved · ${this.formatTime(this.tourState.totalSeconds)}`;
+      }
+
       if (this.bestGap === 0 && this.timeToSolve != null) {
         return `Solved in ${this.formatTime(this.timeToSolve)}!`;
       }
+
       if (this.bestGap != null && this.bestGap > 0) {
         return `Finished · ${this.bestGap} away`;
       }
+
       if (this.bestGap === 0) return "Solved!";
       return "Time's up!";
     },
@@ -149,6 +247,7 @@ createApp({
 
   beforeUnmount() {
     this.stopTimer();
+    this.stopTourTransitionTimer();
     window.removeEventListener("pointermove", this.onGlobalPointerMove);
     window.removeEventListener("pointerup", this.onGlobalPointerUp);
     window.removeEventListener("pointercancel", this.onGlobalPointerCancel);
@@ -159,6 +258,7 @@ createApp({
   methods: {
     resetToPregame() {
       this.stopTimer();
+      this.stopTourTransitionTimer();
       this.stopSlotWatcher();
       this.target = null;
       this.seedLabel = "";
@@ -174,6 +274,16 @@ createApp({
       this.solutionText = null;
       this.showSolution = false;
       this.message = "Choose a mode, then press Start";
+      this.tourState = {
+        active: false,
+        status: "idle",
+        seedLabel: "",
+        stepIndex: 0,
+        totalSeconds: 0,
+        transitioning: false,
+        boards: [],
+      };
+      this.tourReviewIndex = null;
     },
 
     selectMode(modeId) {
@@ -192,10 +302,19 @@ createApp({
 
       this.resetToPregame();
       this.activeModeId = modeId;
+
+      if (modeId === "tour") {
+        this.message = "Tour: Family, Class, Weird";
+      }
     },
 
     startSelectedMode() {
       const modeId = this.activeModeId;
+
+      if (modeId === "tour") {
+          this.startTour();
+        return;
+      }
       const seedLabel = this.computeSeedLabel(modeId);
       const saved = this.loadState(modeId, seedLabel);
 
@@ -241,34 +360,83 @@ createApp({
         this.slotTimerId = null;
       }
     },
+
+
     restoreSavedState(saved) {
       this.stopTimer();
+      this.stopTourTransitionTimer?.();
 
       this.target = saved.target;
       this.seedLabel = saved.seedLabel;
       this.startTiles = saved.startTiles || [];
       this.startTileIdCounter = this.startTiles.length;
       this.lines = saved.lines || Array.from({ length: 5 }, () => this.makeEmptyLine());
-      if (this.linesHaveCircularReference(this.lines)) {
-        this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
-        this.bestSnapshot = null;
-        this.message = "Invalid saved working was cleared";
-      }
+
       this.bestValue = saved.bestValue;
       this.bestGap = saved.bestGap;
-      this.bestSnapshot = saved.bestSnapshot;
+      this.bestSnapshot = saved.bestSnapshot ? this.cloneLines(saved.bestSnapshot) : null;
       this.timeToSolve = saved.timeToSolve;
       this.selectedItem = null;
       this.solutionText = null;
       this.showSolution = false;
       this.gameState = saved.gameState || "playing";
 
+      // Restore Tour state BEFORE choosing which timer to restart.
+      if (this.activeModeId === "tour" && saved.tourState) {
+        this.tourState = {
+          active: !!saved.tourState.active,
+          status: saved.tourState.status || "idle",
+          seedLabel: saved.tourState.seedLabel || saved.seedLabel || "",
+          stepIndex: saved.tourState.stepIndex || 0,
+          totalSeconds: saved.tourState.totalSeconds || 0,
+          transitioning: false,
+          boards: (saved.tourState.boards || []).map((board) =>
+            board
+              ? {
+                  ...board,
+                  lines: board.lines ? this.cloneLines(board.lines) : null,
+                  bestSnapshot: board.bestSnapshot ? this.cloneLines(board.bestSnapshot) : null,
+                }
+              : board
+          ),
+        };
+
+        this.tourReviewIndex =
+          saved.tourReviewIndex == null ? null : saved.tourReviewIndex;
+      } else {
+        this.tourReviewIndex = null;
+      }
+
+      // Safety check after all board data is restored.
+      if (this.linesHaveCircularReference(this.lines)) {
+        this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
+        this.bestSnapshot = null;
+        this.message = "Invalid saved working was cleared";
+      }
+
       if (this.gameState === "playing") {
-        this.timerSeconds = saved.timerSeconds || this.timerDuration;
-        this.startTimer();
-        this.message = "Select a number or operation";
+        this.timerSeconds =
+          saved.timerSeconds != null
+            ? saved.timerSeconds
+            : this.activeModeId === "tour"
+              ? 60
+              : this.timerDuration;
+
+        if (this.activeModeId === "tour" && this.tourState.status === "playing") {
+          this.startTourTimer();
+          this.message = `Tour ${this.tourState.stepIndex + 1}/3: ${this.tourStepTitle}`;
+        } else {
+          this.startTimer();
+          this.message = "Select a number or operation";
+        }
       } else {
         this.timerSeconds = saved.timerSeconds || 0;
+        this.message = this.finishedMessage;
+      }
+
+      if (this.isTourFinished) {
+        this.stopTimer();
+        this.timerSeconds = this.tourState.totalSeconds || saved.timerSeconds || 0;
         this.message = this.finishedMessage;
       }
     },
@@ -310,6 +478,23 @@ createApp({
         bestSnapshot: this.bestSnapshot ? this.cloneLines(this.bestSnapshot) : null,
         timeToSolve: this.timeToSolve,
         timerSeconds: this.timerSeconds,
+
+        tourState: modeId === "tour"
+          ? {
+              ...this.tourState,
+              boards: this.tourState.boards.map((board) =>
+                board
+                  ? {
+                      ...board,
+                      lines: board.lines ? this.cloneLines(board.lines) : null,
+                      bestSnapshot: board.bestSnapshot ? this.cloneLines(board.bestSnapshot) : null,
+                    }
+                  : board
+              ),
+            }
+          : null,
+
+        tourReviewIndex: modeId === "tour" ? this.tourReviewIndex : null,
       };
       try {
         localStorage.setItem(key, JSON.stringify(data));
@@ -353,7 +538,93 @@ createApp({
 
       this.saveState(this.activeModeId);
     },
+    startTour() {
+      this.stopTimer();
+      this.stopTourTransitionTimer();
 
+      const seedLabel = this.computeSeedLabel("tour");
+      this.tourReviewIndex = null;
+      this.tourState = {
+        active: true,
+        status: "playing",
+        transitioning: false,
+        seedLabel,
+        stepIndex: 0,
+        totalSeconds: 0,
+        boards: [],
+      };
+
+      this.startTourStep(0);
+      this.startTourTimer();
+    },
+
+    startTourStep(stepIndex) {
+      this.tourState.transitioning = false;
+      const step = this.tourSteps[stepIndex];
+      if (!step) return;
+
+      this.tourState.stepIndex = stepIndex;
+
+      this.selectedItem = null;
+      this.bestValue = null;
+      this.bestGap = null;
+      this.bestSnapshot = null;
+      this.solutionText = null;
+      this.showSolution = false;
+      this.timeToSolve = null;
+      this.dragState = { active: false, pointerId: null, startX: 0, startY: 0, payload: null };
+
+      const puzzle = this.generateSolvablePuzzle(
+        step.modeId,
+        `${this.tourState.seedLabel}|tour|${step.modeId}|${stepIndex + 1}`
+      );
+
+      this.target = puzzle.target;
+      this.seedLabel = this.tourState.seedLabel;
+
+      this.startTileIdCounter = 0;
+      this.startTiles = puzzle.numbers.map((value) => ({
+        id: this.makeStartTileId(),
+        value,
+      }));
+
+      this.lines = Array.from({ length: 5 }, () => this.makeEmptyLine());
+
+      this.gameState = "playing";
+      this.timerSeconds = 60;
+      this.message = `Tour ${stepIndex + 1}/3: ${step.title}`;
+
+      this.saveState(this.activeModeId);
+    },
+    reviewTourBoard(index) {
+      if (!this.isTourFinished) return;
+
+      const board = this.tourState.boards[index];
+      if (!board) return;
+
+      this.tourReviewIndex = index;
+
+      this.target = board.target;
+      this.seedLabel = this.tourState.seedLabel;
+
+      this.startTileIdCounter = 0;
+      this.startTiles = board.numbers.map((value) => ({
+        id: this.makeStartTileId(),
+        value,
+      }));
+
+      this.lines = board.lines ? this.cloneLines(board.lines) : Array.from({ length: 5 }, () => this.makeEmptyLine());
+
+      this.bestValue = board.bestValue;
+      this.bestGap = board.bestGap;
+      this.bestSnapshot = board.bestSnapshot ? this.cloneLines(board.bestSnapshot) : null;
+
+      this.solutionText = null;
+      this.showSolution = false;
+      this.selectedItem = null;
+
+      this.message = `Reviewing ${board.title} · ${board.solved ? "Solved" : "Passed"} · ${this.formatTime(board.timeUsedSeconds)}`;
+    },
     computeSeedLabel(modeId) {
       const now = new Date();
       if (modeId === "daily") return this.localDateStamp(now);
@@ -364,6 +635,16 @@ createApp({
     copyResult() {
       if (this.gameState !== "finished") return;
 
+      if (this.isTourFinished) {
+        const text = this.tourResultText();
+
+        navigator.clipboard.writeText(text).then(() => {
+          this.message = "Copied Tour!";
+        });
+
+        return;
+      }
+
       const resultText =
         this.bestGap === 0 && this.timeToSolve != null
           ? `${this.formatTime(this.timeToSolve)} solved`
@@ -371,9 +652,12 @@ createApp({
             ? `Off by ${this.bestGap}`
             : "No solution found";
 
-      const dateText = this.formatCopyDate(this.seedLabel);
+      const seedText =
+        this.activeModeId === "daily"
+          ? this.formatCopyDate(this.seedLabel)
+          : this.formatTourSeedText(this.seedLabel);
 
-      const text = `Numbers · ${resultText} · ${this.activeMode.title} ${dateText}`;
+      const text = `Numbers · ${resultText} · ${this.activeMode.title} ${seedText}`;
 
       navigator.clipboard.writeText(text).then(() => {
         this.message = "Copied!";
@@ -391,9 +675,69 @@ createApp({
 
       return `${d}-${months[m - 1]}`;
     },
+    formatTourSeedText(seedLabel) {
+      const text = String(seedLabel || "");
+      const match = text.match(/(\d{2}:\d{2})$/);
+
+      if (match) return match[1];
+
+      return text;
+    },
+    tourResultText() {
+      const solvedCount = this.tourState.boards.filter((board) => board?.solved).length;
+      const seedText = this.formatTourSeedText(this.tourState.seedLabel || this.seedLabel);
+
+      const lines = this.tourSteps.map((step, index) => {
+        const board = this.tourState.boards[index];
+
+        if (!board) {
+          return `${step.title} — not played`;
+        }
+
+        if (board.solved) {
+          return `${board.title} ✅ ${this.formatTime(board.timeUsedSeconds)}`;
+        }
+
+        if (board.bestValue == null) {
+          return `${board.title} ❌ no result`;
+        }
+
+        return `${board.title} ❌ best ${board.bestValue} (${board.bestGap} away)`;
+      });
+
+      return [
+        `Numbers Tour · ${solvedCount}/3 solved · ${this.formatTime(this.tourState.totalSeconds)} · ${seedText}`,
+        ...lines,
+      ].join("\n");
+    },
 
     showComputerSolution() {
       if (this.gameState !== "finished") return;
+      if (this.isTourFinished) {
+        const board =
+          this.tourReviewIndex == null
+            ? this.tourState.boards[this.tourState.boards.length - 1]
+            : this.tourState.boards[this.tourReviewIndex];
+
+        if (!board) return;
+
+        if (this.solutionText) {
+          this.showSolution = !this.showSolution;
+          return;
+        }
+
+        this.solutionText = this.findBestSolution(board.numbers, board.target);
+        this.showSolution = true;
+
+        this.$nextTick(() =>
+          document.getElementById("solution-panel")?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          })
+        );
+
+        return;
+      }
 
       if (this.solutionText) {
         this.showSolution = !this.showSolution;
@@ -666,7 +1010,162 @@ createApp({
         seedLabel: sl,
       };
     },
+    generateSolvablePuzzle(modeId, seedLabel) {
+      const puzzle = this.generatePuzzle(modeId, seedLabel);
+      const numbers = puzzle.numbers;
 
+      const seedString = `numbers|solvable|${modeId}|${seedLabel}`;
+      const rand = this.mulberry32(this.fnv1a32(seedString));
+
+      const startingValues = new Set(numbers);
+
+      const chooseOperation = (a, b) => {
+        const options = [];
+
+        // Addition
+        options.push({
+          value: a.value + b.value,
+          symbol: "+",
+          text: `${a.text} + ${b.text}`,
+          usedIds: new Set([...a.usedIds, ...b.usedIds]),
+        });
+
+        // Multiplication, but avoid ×1 because it is too trivial
+        if (a.value !== 1 && b.value !== 1) {
+          options.push({
+            value: a.value * b.value,
+            symbol: "×",
+            text: `${a.text} × ${b.text}`,
+            usedIds: new Set([...a.usedIds, ...b.usedIds]),
+          });
+        }
+
+        // Subtraction, positive results only
+        if (a.value > b.value) {
+          options.push({
+            value: a.value - b.value,
+            symbol: "−",
+            text: `${a.text} − ${b.text}`,
+            usedIds: new Set([...a.usedIds, ...b.usedIds]),
+          });
+        } else if (b.value > a.value) {
+          options.push({
+            value: b.value - a.value,
+            symbol: "−",
+            text: `${b.text} − ${a.text}`,
+            usedIds: new Set([...a.usedIds, ...b.usedIds]),
+          });
+        }
+
+        // Division, exact integer division only, avoid ÷1
+        if (b.value !== 1 && a.value % b.value === 0) {
+          options.push({
+            value: a.value / b.value,
+            symbol: "÷",
+            text: `${a.text} ÷ ${b.text}`,
+            usedIds: new Set([...a.usedIds, ...b.usedIds]),
+          });
+        }
+
+        if (a.value !== 1 && b.value % a.value === 0) {
+          options.push({
+            value: b.value / a.value,
+            symbol: "÷",
+            text: `${b.text} ÷ ${a.text}`,
+            usedIds: new Set([...a.usedIds, ...b.usedIds]),
+          });
+        }
+
+        const cleanOptions = options.filter((option) =>
+          Number.isInteger(option.value) &&
+          option.value > 0 &&
+          option.value <= 5000
+        );
+
+        if (!cleanOptions.length) return null;
+
+        return cleanOptions[Math.floor(rand() * cleanOptions.length)];
+      };
+
+      const attemptBuildTarget = () => {
+        let items = numbers.map((value, index) => ({
+          value,
+          text: String(value),
+          usedIds: new Set([index]),
+        }));
+
+        const opRoll = rand();
+
+        const maxOps =
+          opRoll < 0.20 ? 3 :   // 4-number-ish solution
+          opRoll < 0.60 ? 4 :   // 5-number-ish solution
+                          5;    // 6-number-ish solution
+        let current = null;
+        let steps = [];
+
+        for (let opIndex = 0; opIndex < maxOps; opIndex++) {
+          if (items.length < 2) break;
+
+          const i = Math.floor(rand() * items.length);
+          let j = Math.floor(rand() * (items.length - 1));
+          if (j >= i) j += 1;
+
+          const a = items[i];
+          const b = items[j];
+
+          const result = chooseOperation(a, b);
+          if (!result) return null;
+
+          const stepText = `${result.text} = ${result.value}`;
+          steps.push(stepText);
+
+          const nextItems = items.filter((_, index) => index !== i && index !== j);
+          current = {
+            value: result.value,
+            text: String(result.value),
+            usedIds: result.usedIds,
+          };
+
+          nextItems.push(current);
+          items = nextItems;
+        }
+
+        if (!current) return null;
+
+        const target = current.value;
+        const usedCount = current.usedIds.size;
+
+        if (steps.length < 3) return null;
+
+        const preferredMinUsedCount = maxOps >= 4 ? 5 : 4;
+
+        if (usedCount < preferredMinUsedCount) return null;
+        if (target < 100 || target > 999) return null;
+        if (startingValues.has(target)) return null;
+
+        return {
+          target,
+          hiddenSolution: steps,
+        };
+      };
+
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const built = attemptBuildTarget();
+
+        if (built) {
+          return {
+            ...puzzle,
+            target: built.target,
+            hiddenSolution: built.hiddenSolution,
+          };
+        }
+      }
+
+      // Safety fallback:
+      // If random construction fails, keep the original puzzle rather than crashing.
+      // This should be rare, but avoids blocking board creation.
+      return puzzle;
+    },
     localDateStamp(date) {
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -710,14 +1209,113 @@ createApp({
         if (this.timerSeconds % 10 === 0) this.saveState(this.activeModeId);
       }, 1000);
     },
+    startTourTimer() {
+      this.stopTimer();
 
+      this.timerId = setInterval(() => {
+        if (!this.isTourActive || this.gameState !== "playing") return;
+        if (this.tourState.transitioning) return;
+        this.timerSeconds -= 1;
+        this.tourState.totalSeconds += 1;
+
+        if (this.timerSeconds <= 0) {
+          this.timerSeconds = 0;
+
+          this.completeTourStep({
+            solved: false,
+            finalValue: this.bestValue,
+            reason: "time",
+          });
+
+          return;
+        }
+
+        if (this.tourState.totalSeconds % 10 === 0) {
+          this.saveState(this.activeModeId);
+        }
+      }, 1000);
+    },
+
+    completeTourStep({ solved, finalValue = null, reason = "solved" }) {
+      const stepIndex = this.tourState.stepIndex;
+      const step = this.tourSteps[stepIndex];
+
+      if (!step) return;
+
+      const timeUsed = this.tourStepElapsedSeconds;
+      const finishedAt = this.tourState.totalSeconds;
+
+      const bestValue = finalValue ?? this.bestValue;
+      const bestGap =
+        bestValue == null || this.target == null
+          ? null
+          : Math.abs(this.target - bestValue);
+
+      this.tourState.boards[stepIndex] = {
+        modeId: step.modeId,
+        title: step.title,
+        target: this.target,
+        numbers: this.startTiles.map((tile) => tile.value),
+        solved,
+        reason,
+        bestValue,
+        bestGap,
+        timeUsedSeconds: timeUsed,
+        finishedAtSeconds: finishedAt,
+        lines: this.cloneLines(),
+        bestSnapshot: this.bestSnapshot ? this.cloneLines(this.bestSnapshot) : null,
+      };
+
+      const nextIndex = stepIndex + 1;
+
+      if (nextIndex < this.tourSteps.length) {
+        const nextStep = this.tourSteps[nextIndex];
+        const statusText = solved ? "solved" : "passed";
+        this.tourState.transitioning = true;
+        this.message = `${step.title} ${statusText} · ${nextStep.title} next`;
+        this.selectedItem = null;
+
+        this.stopTourTransitionTimer();
+
+        this.tourTransitionTimerId = setTimeout(() => {
+          this.tourTransitionTimerId = null;
+
+          if (!this.isTourActive || this.gameState !== "playing") return;
+
+          this.startTourStep(nextIndex);
+        }, 750);
+
+        return;
+      }
+
+      this.stopTimer();
+
+      this.tourState.status = "finished";
+
+      this.gameState = "finished";
+      this.timeToSolve = this.tourState.totalSeconds;
+
+      const solvedCount = this.tourState.boards.filter((board) => board?.solved).length;
+
+      this.bestValue = solvedCount;
+      this.bestGap = solvedCount === 3 ? 0 : 3 - solvedCount;
+
+      this.message = `Tour finished · ${solvedCount}/3 solved · ${this.formatTime(this.tourState.totalSeconds)}`;
+
+      this.saveState(this.activeModeId);
+    },
     stopTimer() {
       if (this.timerId) {
         clearInterval(this.timerId);
         this.timerId = null;
       }
     },
-
+    stopTourTransitionTimer() {
+      if (this.tourTransitionTimerId) {
+        clearTimeout(this.tourTransitionTimerId);
+        this.tourTransitionTimerId = null;
+      }
+    },
     derivedLabel(lineIndex) {
       return String.fromCharCode(65 + lineIndex);
     },
@@ -1206,6 +1804,15 @@ createApp({
       }
 
       if (gap === 0 && this.gameState === "playing") {
+        if (this.isTourActive) {
+          this.completeTourStep({
+            solved: true,
+            finalValue: value,
+            reason: "solved",
+          });
+          return;
+        }
+
         this.timeToSolve = this.timerDuration - this.timerSeconds;
         this.stopTimer();
         this.gameState = "finished";
@@ -1374,7 +1981,17 @@ createApp({
             <div class="numbers-brand">
               <div class="numbers-title">Numbers</div>
               <div class="numbers-sub">
-                {{ gameState === 'pregame' ? 'Pick a mode, then press Start' : activeMode.title + ' · ' + seedLabel }}
+                {{
+                  gameState === 'pregame'
+                    ? 'Pick a mode, then press Start'
+                    : isTourFinished && tourReviewIndex != null
+                      ? 'Tour review · ' + tourReviewTitle + ' · ' + tourReviewSubtitle
+                      : isTourFinished
+                        ? 'Tour complete · ' + seedLabel
+                        : isTourActive
+                          ? 'Tour · ' + tourStepTitle + ' · ' + seedLabel
+                          : activeMode.title + ' · ' + seedLabel
+                }}           
               </div>
             </div>
 
@@ -1583,7 +2200,15 @@ createApp({
               :disabled="gameState === 'pregame'"
               @click="gameState === 'finished' ? showComputerSolution() : clearAllWorking()"
             >
-              {{ gameState === 'finished' ? (showSolution ? 'Hide' : 'Solution') : 'Clear' }}
+              {{
+                gameState === 'finished'
+                  ? showSolution
+                    ? 'Hide'
+                    : isTourFinished
+                      ? 'Board Solution'
+                      : 'Solution'
+                  : 'Clear'
+              }}
             </button>
 
             <button
@@ -1603,6 +2228,42 @@ createApp({
               @click="copyResult"
             >⧉</button>
           </div>
+
+          <div v-if="isTourFinished" class="numbers-tour-panel">
+            <div class="numbers-bank-head">
+              <div class="numbers-label">Tour Results</div>
+              <div class="numbers-label">{{ tourSolvedCount }}/3 solved</div>
+            </div>
+
+            <div class="numbers-tour-total">
+              Total time: {{ formatTime(tourState.totalSeconds) }}
+            </div>
+
+            <div class="numbers-tour-list">
+              <button
+                v-for="(row, rowIndex) in tourReviewRows"
+                :key="row.title"
+                class="numbers-tour-row numbers-tour-review-button"
+                :class="{ 'is-selected': tourReviewIndex === rowIndex }"
+                type="button"
+                @click="reviewTourBoard(rowIndex)"
+              >
+                <div class="numbers-tour-main">
+                  <strong>{{ row.title }}</strong>
+                  <span>{{ row.status }}</span>
+                </div>
+
+                <div class="numbers-tour-detail">
+                  {{ row.detail }}
+                </div>
+
+                <div class="numbers-tour-time">
+                  {{ row.timeText }}
+                </div>
+              </button>
+            </div>
+          </div>
+
 
           <div v-if="showSolution && solutionText" id="solution-panel" class="numbers-solution-panel">
             <div class="numbers-label">Best Solution</div>

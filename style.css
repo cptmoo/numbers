@@ -94,7 +94,7 @@ button {
 
 .numbers-modes {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
 }
 
@@ -670,4 +670,77 @@ button {
 .numbers-op-slot.is-selected,
 .numbers-op-button.is-selected {
   border-color: var(--selected-border) !important;
+}
+
+
+/* =========================================================
+   TOUR RESULTS
+   ========================================================= */
+
+.numbers-tour-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px;
+}
+
+.numbers-tour-total {
+  font-weight: 900;
+  font-size: 1rem;
+  margin: 6px 0 8px 0;
+}
+
+.numbers-tour-list {
+  display: grid;
+  gap: 8px;
+}
+
+.numbers-tour-row {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.numbers-tour-main {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.numbers-tour-main span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.numbers-tour-detail {
+  grid-column: 1 / 2;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.numbers-tour-time {
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.numbers-tour-review-button {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.numbers-tour-review-button.is-selected {
+  background: var(--selected-bg);
+  border-color: var(--selected-border);
+  box-shadow:
+    0 0 0 2px rgba(255, 179, 0, 0.35),
+    0 0 12px rgba(255, 179, 0, 0.4);
 }
